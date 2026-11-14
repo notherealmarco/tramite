@@ -1,0 +1,53 @@
+# Tramite configuration. Durations: 30s, 15m, 6h.
+listen: ":8080"
+data_dir: data
+
+sources:
+  - id: rome
+    name: Roma
+    # Feed id in Transitous/MOTIS: ids in responses then match Transitous
+    # (stops "it-Lazio-Rome_71527", trips "20261113_14:33_it-Lazio-Rome_<trip>").
+    transitous_feed_id: it-Lazio-Rome
+    timezone: Europe/Rome
+    static:
+      url: https://romamobilita.it/wp-content/uploads/shared/rome_static_gtfs.zip
+      check_every: 6h
+    realtime:
+      trip_updates: https://romamobilita.it/wp-content/uploads/shared/rome_rtgtfs_trip_updates_feed.pb
+      vehicle_positions: https://romamobilita.it/wp-content/uploads/shared/rome_rtgtfs_vehicle_positions_feed.pb
+      alerts: https://romamobilita.it/wp-content/uploads/shared/rome_rtgtfs_service_alerts_feed.pb
+      # Roma answers "not modified": check every 2 s around the expected
+      # update (~every 30 s), wait otherwise.
+      fast_poll: 2s
+      min_poll: 15s
+    # Keep every feed version under data/raw (about 1 GB/day for Rome).
+    archive: false
+    quirks:
+      # Buses vanish from Rome's feeds about a stop before the end of their
+      # trip until the driver sets the next one (median 2.5 min, p95 13 min).
+      ghost_memory:
+        enabled: true
+        max_stops_left: 2
+        hold: 15m
+      inference:
+        enabled: true
+        turnaround: 3m
+        max_end_distance_m: 300
+        max_delay: 60m
+        horizon: 60m
+        # Inferred times further than this from now (at the stop) are shown
+        # as scheduled: beyond ~30 min they are no better than the timetable.
+        max_wait: 30m
+        first_only: true
+
+  # A source served as it comes (no quirks), e.g. Cotral via BusOne:
+  # - id: cotral
+  #   name: COTRAL
+  #   static:
+  #     url: https://proxy.busone.app/cotral/gtfs.zip
+  #   realtime:
+  #     vehicle_positions: https://proxy.busone.app/cotral/gtfs-rt/vehicle-positions.pb
+  #     min_poll: 20s
+  #   headers:
+  #     X-BusOne-Client: "tramite (contact: you@example.org)"
+  #     X-BusOne-Use: nonprofit
