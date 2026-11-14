@@ -115,7 +115,9 @@ func (a *API) owner(id string) *engine.Source {
 }
 
 // departures: a stop's next departures, or with trip= one trip's row at the
-// stop (listed whatever its state: for following a ride).
+// stop (listed whatever its state: for following a ride); line= (the
+// trip's line, "<prefix>_<number>") helps match a trip id from another
+// timetable version.
 func (a *API) departures(w http.ResponseWriter, r *http.Request) {
 	stop := r.PathValue("stop")
 	s := a.owner(stop)
@@ -124,7 +126,7 @@ func (a *API) departures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	b, err := a.board(s, stop, q.Get("trip"), q.Get("n"), q.Get("window"))
+	b, err := a.board(s, stop, q.Get("trip"), q.Get("line"), q.Get("n"), q.Get("window"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -132,9 +134,9 @@ func (a *API) departures(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, b)
 }
 
-func (a *API) board(s *engine.Source, stop, trip, n, window string) (*engine.Board, error) {
+func (a *API) board(s *engine.Source, stop, trip, line, n, window string) (*engine.Board, error) {
 	if trip != "" {
-		return s.TripAt(stop, trip)
+		return s.TripAt(stop, trip, line)
 	}
 	nn, ww, err := boardParams(n, window)
 	if err != nil {

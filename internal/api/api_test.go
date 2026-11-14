@@ -73,9 +73,12 @@ func TestDeparturesEndpointAndETag(t *testing.T) {
 		"/v1/stops/rome_ZZ/departures":          404,
 		"/v1/stops/rome_A/departures?n=0":       400,
 		"/v1/stops/rome_A/departures?trip=nope": 404,
-		"/v1/vehicles?bbox=1,2,3":               400,
-		"/readyz":                               200,
-		"/metrics":                              200,
+		// A trip id of another timetable version, matched by run.
+		"/v1/stops/rome_A/departures?trip=20261113_14:33_rome_old&line=rome_60": 200,
+		"/v1/stops/rome_A/departures?trip=20261113_14:33_rome_old&line=rome_61": 404,
+		"/v1/vehicles?bbox=1,2,3": 400,
+		"/readyz":                 200,
+		"/metrics":                200,
 	} {
 		r, err := http.Get(srv.URL + path)
 		if err != nil {

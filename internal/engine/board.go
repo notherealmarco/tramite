@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -133,6 +134,42 @@ func (s *Source) resolveTripID(id string, now time.Time) (TripDay, bool) {
 		return TripDay{}, false
 	}
 	return TripDay{t, s.guessDate(t, now)}, true
+}
+
+// resolveRun finds the trip a Transitous trip id (<date>_<HH:MM>_...) stands
+// for when its GTFS id is unknown here: running that day, first departure
+// in that minute, calling at stop, of line when given.
+func (s *Source) resolveRun(id string, stop int32, line string) (TripDay, bool) {
+	f := s.st.feed
+	date, rest, ok := strings.Cut(id, "_")
+	hhmm, _, ok2 := strings.Cut(rest, "_")
+	d, err := strconv.Atoi(date)
+	h, m, ok3 := strings.Cut(hhmm, ":")
+	hi, err1 := strconv.Atoi(h)
+	mi, err2 := strconv.Atoi(m)
+	if !ok || !ok2 || !ok3 || len(date) != 8 || err != nil || err1 != nil || err2 != nil {
+		return TripDay{}, false
+	}
+	start := int32(hi*60 + mi)
+	number := strings.TrimPrefix(line, s.Prefix()+"_")
+	var found []int32
+	for _, i := range f.ByStop[stop] {
+		t := f.StopTimes[i].Trip
+		tr := &f.Trips[t]
+		if f.StartDep(t)/60 != start || !f.Active(tr.Service, d) {
+			continue
+		}
+		if line != "" && !strings.EqualFold(f.Routes[tr.Route].Line(), number) {
+			continue
+		}
+		if !slices.Contains(found, t) {
+			found = append(found, t)
+		}
+	}
+	if len(found) == 1 || (len(found) > 1 && line != "") {
+		return TripDay{found[0], d}, true
+	}
+	return TripDay{}, false
 }
 
 func (s *Source) place(stop int32) Place {
@@ -269,7 +306,14 @@ func (s *Source) row(td TripDay, st gtfs.StopTime, now time.Time) (StopTime, boo
 
 // TripAt is one trip's row at one stop, whether or not a board would list
 // it (bus already past, departure gone): for following a ride.
-func (s *Source) TripAt(stopID, tripID string) (*Board, error) {
+//
+// A trip id from another version of the timetable (Transitous may lag a
+// daily-regenerated feed, whose trip ids change) is matched by run: the
+// trip that runs that day, leaves its first stop in that minute (both in
+// the id) and calls at this stop; [line] ("<prefix>_<number>") settles it
+// when two lines' runs would match, and an ambiguous match without it is
+// not found.
+func (s *Source) TripAt(stopID, tripID, line string) (*Board, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	f := s.st.feed
@@ -282,6 +326,9 @@ func (s *Source) TripAt(stopID, tripID string) (*Board, error) {
 	}
 	now := s.Now()
 	td, ok := s.resolveTripID(tripID, now)
+	if !ok {
+		td, ok = s.resolveRun(tripID, stop, line)
+	}
 	if !ok {
 		return nil, ErrNotFound
 	}

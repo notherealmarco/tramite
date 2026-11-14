@@ -43,14 +43,23 @@ sources:
         max_wait: 30m
         first_only: true
 
-  # A source served as it comes (no quirks), e.g. Cotral via BusOne:
-  # - id: cotral
-  #   name: COTRAL
-  #   static:
-  #     url: https://proxy.busone.app/cotral/gtfs.zip
-  #   realtime:
-  #     vehicle_positions: https://proxy.busone.app/cotral/gtfs-rt/vehicle-positions.pb
-  #     min_poll: 20s
-  #   headers:
-  #     X-BusOne-Client: "tramite (contact: you@example.org)"
-  #     X-BusOne-Use: nonprofit
+  # Cotral (Lazio regional buses) via BusOne, which builds the realtime
+  # feeds from Cotral's data (no official GTFS-RT). Served as it comes: no
+  # quirks until its data has been studied. BusOne answers no "not
+  # modified", so every check downloads the feed: poll at a fixed pace.
+  # Terms: free for personal/nonprofit use, attribution to "BusOne
+  # (https://busone.app) and COTRAL"; BusOne asks pollers to identify.
+  - id: cotral
+    name: COTRAL
+    transitous_feed_id: it-Lazio-Cotral
+    timezone: Europe/Rome
+    static:
+      url: https://proxy.busone.app/cotral/gtfs.zip
+      check_every: 6h
+    realtime:
+      trip_updates: https://proxy.busone.app/cotral/gtfs-rt/trip-updates.pb
+      vehicle_positions: https://proxy.busone.app/cotral/gtfs-rt/vehicle-positions.pb
+      min_poll: 20s
+    headers:
+      X-BusOne-Client: "Tramite for Trames (https://git.marcorealacci.me/marcorealacci/tramite; <contact>)"
+      X-BusOne-Use: nonprofit

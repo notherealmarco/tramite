@@ -373,7 +373,7 @@ func TestTripAtStop(t *testing.T) {
 	if _, ok := fx.board("B")["out1"]; ok {
 		t.Fatal("the board at B should drop out1: its bus is past B")
 	}
-	b, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:33_it-Lazio-Rome_out1")
+	b, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:33_it-Lazio-Rome_out1", "")
 	if err != nil || len(b.StopTimes) != 1 {
 		t.Fatalf("TripAt B: %+v %v", b, err)
 	}
@@ -382,18 +382,43 @@ func TestTripAtStop(t *testing.T) {
 		t.Fatalf("row at B: %+v %+v", r, r.Vehicle)
 	}
 	// At the end of the trip: the arrival, from the prediction.
-	c, _ := fx.src.TripAt("it-Lazio-Rome_C", "20261113_14:33_it-Lazio-Rome_out1")
+	c, _ := fx.src.TripAt("it-Lazio-Rome_C", "20261113_14:33_it-Lazio-Rome_out1", "")
 	if len(c.StopTimes) != 1 || !c.StopTimes[0].Arrival.Equal(g.At(14, 53, 0)) || c.StopTimes[0].DepartureTimestampReason != engine.ReasonPredicted {
 		t.Fatalf("row at C: %+v", c.StopTimes)
 	}
 	// A trip that doesn't stop there: no row. Unknown trip: not found.
-	if x, _ := fx.src.TripAt("it-Lazio-Rome_A", "20261113_14:05_it-Lazio-Rome_in1"); len(x.StopTimes) != 1 {
+	if x, _ := fx.src.TripAt("it-Lazio-Rome_A", "20261113_14:05_it-Lazio-Rome_in1", ""); len(x.StopTimes) != 1 {
 		t.Fatal("in1 ends at A: one row (its arrival)")
 	}
-	if _, err := fx.src.TripAt("it-Lazio-Rome_A", "nope"); err == nil {
+	if _, err := fx.src.TripAt("it-Lazio-Rome_A", "nope", ""); err == nil {
 		t.Fatal("unknown trip should be not found")
 	}
 	if !fx.src.Owns("20261113_14:33_it-Lazio-Rome_out1") || !fx.src.Owns("it-Lazio-Rome_A") || fx.src.Owns("it-Lazio-Cotral_A") {
 		t.Fatal("Owns")
+	}
+}
+
+// A trip id from another timetable version (Transitous lagging a feed that
+// renumbers trips daily) is matched by run: day, start minute, stop, line.
+func TestTripAtMatchesRunOfAnotherVersion(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 30, 0)
+	fx.tripUpdates(g.TU{Trip: "out2", Updates: []g.STU{{Seq: 2, Stop: "B", Time: g.At(14, 58, 0)}}})
+	// "old42" is out2 (14:49 from A) under yesterday's numbering.
+	b, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:49_it-Lazio-Rome_old42", "it-Lazio-Rome_60")
+	if err != nil || len(b.StopTimes) != 1 || b.StopTimes[0].GTFSTripID != "out2" || !b.StopTimes[0].Departure.Equal(g.At(14, 58, 0)) {
+		t.Fatalf("run match with line: %+v %v", b, err)
+	}
+	if b, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:49_it-Lazio-Rome_old42", ""); err != nil || b.StopTimes[0].GTFSTripID != "out2" {
+		t.Fatalf("unique run without line: %+v %v", b, err)
+	}
+	if _, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:49_it-Lazio-Rome_old42", "it-Lazio-Rome_61"); err == nil {
+		t.Fatal("another line must not match")
+	}
+	if _, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:50_it-Lazio-Rome_old42", ""); err == nil {
+		t.Fatal("another start minute must not match")
+	}
+	if _, err := fx.src.TripAt("it-Lazio-Rome_A", "20261112_14:49_it-Lazio-Rome_old42", ""); err != nil {
+		t.Fatal("the service runs every day: the 12th matches too")
 	}
 }

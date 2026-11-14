@@ -48,7 +48,7 @@ Tramite finds the source from the prefix; an id no source covers is a 404.
 |---|---|
 | `GET /v1/sources` | what Tramite covers (`idPrefix` per source), timetable version, feed freshness |
 | `GET /v1/stops/{stop}/departures?n=20&window=2h` | a stop's departures |
-| `GET /v1/stops/{stop}/departures?trip={trip}` | one trip's row at that stop, whatever its state (bus already past, departure gone): for following a ride |
+| `GET /v1/stops/{stop}/departures?trip={trip}[&line={line}]` | one trip's row at that stop, whatever its state (bus already past, departure gone): for following a ride. A trip id from another timetable version is matched by run (its date and start minute, the stop, and `line` when given) |
 | `GET /v1/lines/{line}/vehicles` | live buses of a line |
 | `GET /v1/routes/{route}/vehicles` | live buses of one GTFS route |
 | `GET /v1/vehicles?bbox=minLat,minLon,maxLat,maxLon` | live buses in an area, all sources |
@@ -72,7 +72,7 @@ Topics:
 | Topic | Event | Data |
 |---|---|---|
 | `departures=<stop>[,<n>]` | `departures` | the stop's board |
-| `departures=<stop>,trip=<trip>` | `departures` | that trip's row at the stop |
+| `departures=<stop>,trip=<trip>[,line=<line>]` | `departures` | that trip's row at the stop |
 | `line=<line>` / `route=<route>` | `vehicles` | buses of a line / route |
 | `bbox=<minLat>,<minLon>,<maxLat>,<maxLon>` | `vehicles` | buses in the area |
 

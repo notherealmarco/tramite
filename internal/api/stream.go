@@ -24,7 +24,9 @@ import (
 // Topics, written as in the POST body (and accepted as query parameters of
 // GET /v1/stream for a first set):
 //
-//	departures=<stop>[,<n>][,trip=<trip>]    a stop's departures; with trip=, that trip's row only
+//	departures=<stop>[,<n>][,trip=<trip>[,line=<line>]]
+//	                                         a stop's departures; with trip=, that trip's row only
+//	                                         (line= helps match a trip id from another timetable version)
 //	line=<prefix>_<number>                   buses of a line (every route with that short name)
 //	route=<prefix>_<route_id>                buses of one GTFS route
 //	bbox=<minLat>,<minLon>,<maxLat>,<maxLon> buses in an area (all sources)
@@ -51,10 +53,12 @@ func (a *API) parseTopic(name string) (*topic, error) {
 	switch kind {
 	case "departures":
 		parts := strings.Split(v, ",")
-		stop, n, trip := parts[0], "", ""
+		stop, n, trip, line := parts[0], "", "", ""
 		for _, p := range parts[1:] {
 			if t, ok := strings.CutPrefix(p, "trip="); ok {
 				trip = t
+			} else if l, ok := strings.CutPrefix(p, "line="); ok {
+				line = l
 			} else {
 				n = p
 			}
@@ -69,7 +73,7 @@ func (a *API) parseTopic(name string) (*topic, error) {
 			}
 		}
 		return &topic{name: name, kind: "departures", source: s.Cfg.ID,
-			compute: func() (any, error) { return a.board(s, stop, trip, n, "") }}, nil
+			compute: func() (any, error) { return a.board(s, stop, trip, line, n, "") }}, nil
 	case "line", "route":
 		s := a.owner(v)
 		if s == nil {
