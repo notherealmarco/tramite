@@ -64,6 +64,13 @@ JSON endpoints send an `ETag` and answer `If-None-Match` with 304.
 `PROPAGATED`: the delay of an earlier stop carried forward. For `INFERRED`,
 `vehicle.id` is the bus expected to run the departure.
 
+`vehicle.occupancyStatus` (and on the vehicles endpoints): how crowded the
+bus is now, GTFS-RT `OccupancyStatus` names (`EMPTY`,
+`MANY_SEATS_AVAILABLE`, `FEW_SEATS_AVAILABLE`, `STANDING_ROOM_ONLY`,
+`CRUSHED_STANDING_ROOM_ONLY`, `FULL`, `NOT_ACCEPTING_PASSENGERS`). Only when
+the feed reports it (in Rome about half the buses), never for an inferred
+bus. `occupancyPercentage` when the feed gives one.
+
 ### Stream events
 
 `event: departures` or `event: vehicles`, with

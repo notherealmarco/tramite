@@ -37,6 +37,13 @@ type VehicleRef struct {
 	Started             *bool  `json:"started,omitempty"`
 	CurrentStopSequence int32  `json:"currentStopSequence,omitempty"`
 	CurrentStatus       string `json:"currentStatus,omitempty"`
+	// How crowded the bus is now (GTFS-RT OccupancyStatus: EMPTY,
+	// MANY_SEATS_AVAILABLE, FEW_SEATS_AVAILABLE, STANDING_ROOM_ONLY,
+	// CRUSHED_STANDING_ROOM_ONLY, FULL, NOT_ACCEPTING_PASSENGERS), when the
+	// feed reports it. Not given for an inferred bus: it is still on its
+	// previous trip.
+	OccupancyStatus     string  `json:"occupancyStatus,omitempty"`
+	OccupancyPercentage *uint32 `json:"occupancyPercentage,omitempty"`
 }
 
 // StopTime is one departure from a stop, named after MOTIS's StopTime.
@@ -162,7 +169,8 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 	v := s.vehTripAt(now)[td]
 	if v != nil {
 		started := v.Seq == 0 || v.Seq > f.StopTimes[tr.First].Seq
-		d.Vehicle = &VehicleRef{ID: v.Key, Started: &started, CurrentStopSequence: v.Seq, CurrentStatus: v.Status}
+		d.Vehicle = &VehicleRef{ID: v.Key, Started: &started, CurrentStopSequence: v.Seq, CurrentStatus: v.Status,
+			OccupancyStatus: v.Occupancy, OccupancyPercentage: v.OccupancyPercentage}
 		if v.Seq > st.Seq {
 			return d, false // already past this stop
 		}

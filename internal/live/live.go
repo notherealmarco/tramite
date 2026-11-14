@@ -35,8 +35,12 @@ type Vehicle struct {
 	HasPos    bool
 	Seq       int32 // current_stop_sequence, 0 unknown
 	Status    string
-	StopID    string
-	Timestamp time.Time
+	// Occupancy: GTFS-RT OccupancyStatus name ("" when absent or
+	// NO_DATA_AVAILABLE). Percentage only when the feed sets it.
+	Occupancy           string
+	OccupancyPercentage *uint32
+	StopID              string
+	Timestamp           time.Time
 }
 
 type StopTimeUpdate struct {
@@ -124,6 +128,13 @@ func ParseVehicles(b []byte) (time.Time, []Vehicle, error) {
 		}
 		if vp.CurrentStatus != nil {
 			v.Status = vp.GetCurrentStatus().String()
+		}
+		if vp.OccupancyStatus != nil && vp.GetOccupancyStatus() != rt.VehiclePosition_NO_DATA_AVAILABLE {
+			v.Occupancy = vp.GetOccupancyStatus().String()
+		}
+		if vp.OccupancyPercentage != nil {
+			pct := vp.GetOccupancyPercentage()
+			v.OccupancyPercentage = &pct
 		}
 		out = append(out, v)
 	}

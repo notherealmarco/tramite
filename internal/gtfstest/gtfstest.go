@@ -60,6 +60,7 @@ type VP struct {
 	Seq                uint32
 	Status             rt.VehiclePosition_VehicleStopStatus
 	Lat, Lon           float32
+	Occupancy          *rt.VehiclePosition_OccupancyStatus
 }
 
 func Vehicles(ts time.Time, vs ...VP) []byte {
@@ -72,6 +73,7 @@ func Vehicles(ts time.Time, vs ...VP) []byte {
 			CurrentStopSequence: proto.Uint32(v.Seq),
 			CurrentStatus:       v.Status.Enum(),
 			Timestamp:           proto.Uint64(uint64(ts.Unix())),
+			OccupancyStatus:     v.Occupancy,
 		}})
 	}
 	b, _ := proto.Marshal(m)

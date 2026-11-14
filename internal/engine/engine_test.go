@@ -337,3 +337,28 @@ func TestNoGhostsAfterOutage(t *testing.T) {
 		t.Fatalf("want no ghost after an outage, got %d", n)
 	}
 }
+
+func TestOccupancy(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 30, 0)
+	fx.vehicles(
+		g.VP{Label: "5039", Trip: "out1", Route: "60", Seq: 1, Status: stopped, Lat: 41.9, Lon: 12.5,
+			Occupancy: rt.VehiclePosition_STANDING_ROOM_ONLY.Enum()},
+		g.VP{Label: "5088", Trip: "out2", Route: "60", Seq: 1, Status: stopped, Lat: 41.9, Lon: 12.5,
+			Occupancy: rt.VehiclePosition_NO_DATA_AVAILABLE.Enum()},
+	)
+	b := fx.board("A")
+	if v := b["out1"].Vehicle; v == nil || v.OccupancyStatus != "STANDING_ROOM_ONLY" {
+		t.Fatalf("out1 vehicle: %+v", v)
+	}
+	if v := b["out2"].Vehicle; v == nil || v.OccupancyStatus != "" {
+		t.Fatalf("NO_DATA_AVAILABLE should be omitted: %+v", v)
+	}
+	occ := map[string]string{}
+	for _, v := range fx.src.Vehicles("60", nil) {
+		occ[v.ID] = v.OccupancyStatus
+	}
+	if occ["5039"] != "STANDING_ROOM_ONLY" || occ["5088"] != "" {
+		t.Fatalf("vehicles: %v", occ)
+	}
+}

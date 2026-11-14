@@ -26,6 +26,8 @@ type VehicleInfo struct {
 	Started             *bool     `json:"started,omitempty"`
 	CurrentStopSequence int32     `json:"currentStopSequence,omitempty"`
 	CurrentStatus       string    `json:"currentStatus,omitempty"`
+	OccupancyStatus     string    `json:"occupancyStatus,omitempty"`
+	OccupancyPercentage *uint32   `json:"occupancyPercentage,omitempty"`
 	StopID              string    `json:"stopId,omitempty"`
 	Timestamp           time.Time `json:"timestamp"`
 }
@@ -61,6 +63,7 @@ func (s *Source) Vehicles(line string, box *BBox) []VehicleInfo {
 func (s *Source) vehicleInfo(key string, v *live.Vehicle, now time.Time) VehicleInfo {
 	vi := VehicleInfo{Source: s.Cfg.ID, ID: key, Lat: v.Lat, Lon: v.Lon, Bearing: v.Bearing,
 		CurrentStopSequence: v.Seq, CurrentStatus: v.Status, StopID: v.StopID, Timestamp: v.Timestamp.UTC(),
+		OccupancyStatus: v.Occupancy, OccupancyPercentage: v.OccupancyPercentage,
 		RouteID: v.Trip.RouteID, GTFSTripID: v.Trip.TripID}
 	f := s.st.feed
 	if f == nil {
