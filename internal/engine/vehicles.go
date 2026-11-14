@@ -43,19 +43,29 @@ func (b BBox) Contains(lat, lon float64) bool {
 	return lat >= b.MinLat && lat <= b.MaxLat && lon >= b.MinLon && lon <= b.MaxLon
 }
 
-// Vehicles returns live buses, optionally of one line (short name or route
-// id, any case) and/or inside a box.
-func (s *Source) Vehicles(line string, box *BBox) []VehicleInfo {
+// VehicleFilter selects live buses; empty fields match everything.
+type VehicleFilter struct {
+	// Line: what passengers call it, the API line id "<prefix>_<number>"
+	// ("it-Lazio-Rome_85"): every GTFS route with that short name.
+	Line string
+	// Route: one GTFS route exactly, the API route id "<prefix>_<route_id>".
+	Route string
+	Box   *BBox
+}
+
+// Vehicles returns the live buses matching f.
+func (s *Source) Vehicles(f VehicleFilter) []VehicleInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []VehicleInfo{}
 	now := s.Now()
+	line := strings.TrimPrefix(f.Line, s.Prefix()+"_")
 	for k, v := range s.vehiclesAt(now) {
-		if !v.HasPos || (box != nil && !box.Contains(v.Lat, v.Lon)) {
+		if !v.HasPos || (f.Box != nil && !f.Box.Contains(v.Lat, v.Lon)) {
 			continue
 		}
 		vi := s.vehicleInfo(k, v, now)
-		if line != "" && !strings.EqualFold(vi.RouteShortName, line) && !strings.EqualFold(vi.RouteID, line) {
+		if (f.Route != "" && vi.RouteID != f.Route) || (f.Line != "" && !strings.EqualFold(vi.RouteShortName, line)) {
 			continue
 		}
 		out = append(out, vi)
@@ -88,23 +98,32 @@ func (s *Source) vehicleInfo(key string, v *live.Vehicle, now time.Time) Vehicle
 		r := &f.Routes[ri]
 		vi.RouteShortName, vi.RouteColor, vi.RouteTextColor = r.Line(), r.Color, r.TextColor
 	}
-	if p := s.Cfg.TransitousFeedID; p != "" && vi.StopID != "" {
-		vi.StopID = p + "_" + vi.StopID
+	if vi.StopID != "" {
+		vi.StopID = s.Prefix() + "_" + vi.StopID
+	}
+	if vi.RouteID != "" {
+		vi.RouteID = s.Prefix() + "_" + vi.RouteID
+	}
+	if vi.TripID == "" && vi.GTFSTripID != "" {
+		vi.TripID = s.Prefix() + "_" + vi.GTFSTripID
 	}
 	return vi
 }
 
 // Status of the source's feeds, for /v1/sources.
 type Status struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	TransitousFeed string    `json:"transitousFeedId,omitempty"`
-	StaticVersion  string    `json:"staticVersion,omitempty"`
-	Trips          int       `json:"trips"`
-	Vehicles       int       `json:"vehicles"`
-	VehiclesAt     time.Time `json:"vehiclesAt,omitzero"`
-	TripUpdates    int       `json:"tripUpdates"`
-	TripUpdatesAt  time.Time `json:"tripUpdatesAt,omitzero"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	TransitousFeed string `json:"transitousFeedId,omitempty"`
+	// IDPrefix starts every stop, route and trip id of this source (after
+	// the date and time in trip ids): how clients tell what it covers.
+	IDPrefix      string    `json:"idPrefix"`
+	StaticVersion string    `json:"staticVersion,omitempty"`
+	Trips         int       `json:"trips"`
+	Vehicles      int       `json:"vehicles"`
+	VehiclesAt    time.Time `json:"vehiclesAt,omitzero"`
+	TripUpdates   int       `json:"tripUpdates"`
+	TripUpdatesAt time.Time `json:"tripUpdatesAt,omitzero"`
 	// Stale: the feed's last version is older than max_age; its data is ignored.
 	VehiclesStale    bool `json:"vehiclesStale"`
 	TripUpdatesStale bool `json:"tripUpdatesStale"`
@@ -115,7 +134,7 @@ type Status struct {
 func (s *Source) Status() Status {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	st := Status{ID: s.Cfg.ID, Name: s.Cfg.Name, TransitousFeed: s.Cfg.TransitousFeedID,
+	st := Status{ID: s.Cfg.ID, Name: s.Cfg.Name, TransitousFeed: s.Cfg.TransitousFeedID, IDPrefix: s.Prefix(),
 		Vehicles: len(s.st.vehicles), VehiclesAt: s.st.vehTS.UTC(), TripUpdates: len(s.st.tus),
 		TripUpdatesAt: s.st.tuTS.UTC(), Ghosts: len(s.st.ghosts), Inferred: len(s.inferredAt(s.Now()))}
 	now := s.Now()

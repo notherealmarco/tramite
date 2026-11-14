@@ -34,23 +34,54 @@ whole city's feed.
 
 ## API
 
-Times are UTC (RFC 3339). Field names follow MOTIS where one exists. With
-`transitous_feed_id` set, stop and trip ids match Transitous's:
-`it-Lazio-Rome_71527`, `20261113_14:33_it-Lazio-Rome_0#2384-15`. Stop ids
-are accepted with or without the prefix.
+Times are UTC (RFC 3339). Field names follow MOTIS where one exists. Ids are
+Transitous's: every stop, route and trip id carries its source's prefix (the
+`transitous_feed_id`, else the source id), so clients never name a source.
+Tramite finds the source from the prefix; an id no source covers is a 404.
+
+- stop `it-Lazio-Rome_71527`
+- line `it-Lazio-Rome_85`: what passengers call it, the short name; covers every GTFS route with that short name
+- route `it-Lazio-Rome_<route_id>`: one GTFS route exactly
+- trip `20261113_14:33_it-Lazio-Rome_0#2384-15` (service date, start, prefix, GTFS trip_id)
 
 | Endpoint | |
 |---|---|
-| `GET /v1/sources` | sources, timetable version, feed freshness, learned intervals |
-| `GET /v1/sources/{source}/stops/{stop}/departures?n=20&window=2h` | a stop's departures |
-| `GET /v1/sources/{source}/lines/{line}/vehicles` | live buses of a line (short name or route id) |
+| `GET /v1/sources` | what Tramite covers (`idPrefix` per source), timetable version, feed freshness |
+| `GET /v1/stops/{stop}/departures?n=20&window=2h` | a stop's departures |
+| `GET /v1/stops/{stop}/departures?trip={trip}` | one trip's row at that stop, whatever its state (bus already past, departure gone): for following a ride |
+| `GET /v1/lines/{line}/vehicles` | live buses of a line |
+| `GET /v1/routes/{route}/vehicles` | live buses of one GTFS route |
 | `GET /v1/vehicles?bbox=minLat,minLon,maxLat,maxLon` | live buses in an area, all sources |
-| `GET /v1/stream?departures=rome:71527[,n]&line=rome:60&bbox=...` | SSE: current state on connect, then each change (repeat `departures`/`line`) |
+| `GET /v1/stream` | SSE stream (publish/subscribe, below) |
+| `POST /v1/stream/{id}/topics` | add/remove topics of an open stream |
 | `GET /v1/sources/{source}/gtfs-rt/trip-updates.pb` | upstream TripUpdates plus inferred departures (`inferred:<trip>` entities), e.g. for MOTIS |
 | `GET /healthz`, `GET /readyz` | liveness; ready once every timetable is loaded |
 | `GET /metrics` | OpenMetrics (feed age, fetch lag, stale feeds, SSE clients, ...) |
 
-JSON endpoints send an `ETag` and answer `If-None-Match` with 304.
+### Publish/subscribe
+
+A client keeps **one** stream open and changes what it follows:
+
+1. `GET /v1/stream`: the first event is `event: hello`, `data: {"id": "<stream id>"}`.
+2. `POST /v1/stream/{id}/topics` with `{"add": [...], "remove": [...]}`: 204 when applied. Each
+   added topic gets its current state right away, then an event whenever it changes. 404 when
+   the stream is gone (open a new one and subscribe again).
+
+Topics:
+
+| Topic | Event | Data |
+|---|---|---|
+| `departures=<stop>[,<n>]` | `departures` | the stop's board |
+| `departures=<stop>,trip=<trip>` | `departures` | that trip's row at the stop |
+| `line=<line>` / `route=<route>` | `vehicles` | buses of a line / route |
+| `bbox=<minLat>,<minLon>,<maxLat>,<maxLon>` | `vehicles` | buses in the area |
+
+Events carry `{"topic": "<as subscribed>", "data": <same JSON as the GET endpoint>}`. A heartbeat
+comment every 20 s. Topics can also be given as query parameters of `GET /v1/stream`
+(`?departures=…&line=…`) for a first set. At most 200 topics per stream.
+
+JSON endpoints send an `ETag` and answer `If-None-Match` with 304, and are
+gzipped when the client accepts it.
 
 ### Departure fields
 
@@ -62,7 +93,9 @@ JSON endpoints send an `ETag` and answer `If-None-Match` with 304.
 | false | `INFERRED` | | a known bus should run it; late when `departure` > `scheduledDeparture` |
 
 `PROPAGATED`: the delay of an earlier stop carried forward. For `INFERRED`,
-`vehicle.id` is the bus expected to run the departure.
+`vehicle.id` is the bus expected to run the departure. Live buses also come
+with their position (`vehicle.lat`, `lon`, `bearing`, `timestamp`). Each row
+has `arrival`/`scheduledArrival` too (same delay as the departure).
 
 `vehicle.occupancyStatus` (and on the vehicles endpoints): how crowded the
 bus is now, GTFS-RT `OccupancyStatus` names (`EMPTY`,
@@ -70,12 +103,6 @@ bus is now, GTFS-RT `OccupancyStatus` names (`EMPTY`,
 `CRUSHED_STANDING_ROOM_ONLY`, `FULL`, `NOT_ACCEPTING_PASSENGERS`). Only when
 the feed reports it (in Rome about half the buses), never for an inferred
 bus. `occupancyPercentage` when the feed gives one.
-
-### Stream events
-
-`event: departures` or `event: vehicles`, with
-`data: {"topic": "departures=rome:71527", "data": <same JSON as the endpoint>}`.
-A heartbeat comment every 20 s. To change topics, open a new stream.
 
 ## Running
 

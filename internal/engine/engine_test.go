@@ -263,11 +263,11 @@ func TestVehiclesByLineAndArea(t *testing.T) {
 		g.VP{Label: "1", Trip: "out1", Route: "60", Seq: 2, Lat: 41.905, Lon: 12.505},
 		g.VP{Label: "2", Trip: "zzz", Route: "999", Seq: 2, Lat: 45, Lon: 9},
 	)
-	if vs := fx.src.Vehicles("60", nil); len(vs) != 1 || vs[0].ID != "1" || vs[0].Headsign != "P.ZA VENEZIA" || !*vs[0].Started {
+	if vs := fx.src.Vehicles(engine.VehicleFilter{Line: "it-Lazio-Rome_60"}); len(vs) != 1 || vs[0].ID != "1" || vs[0].Headsign != "P.ZA VENEZIA" || !*vs[0].Started {
 		t.Fatalf("line 60: %+v", vs)
 	}
 	box := engine.BBox{MinLat: 44, MinLon: 8, MaxLat: 46, MaxLon: 10}
-	if vs := fx.src.Vehicles("", &box); len(vs) != 1 || vs[0].ID != "2" {
+	if vs := fx.src.Vehicles(engine.VehicleFilter{Box: &box}); len(vs) != 1 || vs[0].ID != "2" {
 		t.Fatalf("area: %+v", vs)
 	}
 }
@@ -318,7 +318,7 @@ func TestStaleFeedIgnored(t *testing.T) {
 	if d.DepartureTimestampReason != engine.ReasonNoRT || d.RealTime || d.Vehicle != nil || !d.Departure.Equal(g.At(15, 5, 0)) {
 		t.Fatalf("stale: want timetable 15:05 without vehicle, got %s %s %+v", d.DepartureTimestampReason, d.Departure.In(g.Rome), d.Vehicle)
 	}
-	if vs := fx.src.Vehicles("60", nil); len(vs) != 0 {
+	if vs := fx.src.Vehicles(engine.VehicleFilter{Line: "it-Lazio-Rome_60"}); len(vs) != 0 {
 		t.Fatalf("stale: want no live buses, got %d", len(vs))
 	}
 	if st := fx.src.Status(); !st.VehiclesStale || !st.TripUpdatesStale || st.Inferred != 0 {
@@ -355,10 +355,45 @@ func TestOccupancy(t *testing.T) {
 		t.Fatalf("NO_DATA_AVAILABLE should be omitted: %+v", v)
 	}
 	occ := map[string]string{}
-	for _, v := range fx.src.Vehicles("60", nil) {
+	for _, v := range fx.src.Vehicles(engine.VehicleFilter{Line: "it-Lazio-Rome_60"}) {
 		occ[v.ID] = v.OccupancyStatus
 	}
 	if occ["5039"] != "STANDING_ROOM_ONLY" || occ["5088"] != "" {
 		t.Fatalf("vehicles: %v", occ)
+	}
+}
+
+// Following a ride: one trip's row at any of its stops, even after the bus
+// has passed it (a board would drop it), with the bus and its position.
+func TestTripAtStop(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 42, 0)
+	fx.tripUpdates(g.TU{Trip: "out1", Updates: []g.STU{{Seq: 3, Stop: "C", Time: g.At(14, 53, 0)}}})
+	fx.vehicles(g.VP{Label: "5039", Trip: "out1", Route: "60", Seq: 3, Status: transit, Lat: 41.915, Lon: 12.515})
+	if _, ok := fx.board("B")["out1"]; ok {
+		t.Fatal("the board at B should drop out1: its bus is past B")
+	}
+	b, err := fx.src.TripAt("it-Lazio-Rome_B", "20261113_14:33_it-Lazio-Rome_out1")
+	if err != nil || len(b.StopTimes) != 1 {
+		t.Fatalf("TripAt B: %+v %v", b, err)
+	}
+	r := b.StopTimes[0]
+	if r.Vehicle == nil || r.Vehicle.ID != "5039" || r.Vehicle.Lat == 0 || r.StopID != "it-Lazio-Rome_B" {
+		t.Fatalf("row at B: %+v %+v", r, r.Vehicle)
+	}
+	// At the end of the trip: the arrival, from the prediction.
+	c, _ := fx.src.TripAt("it-Lazio-Rome_C", "20261113_14:33_it-Lazio-Rome_out1")
+	if len(c.StopTimes) != 1 || !c.StopTimes[0].Arrival.Equal(g.At(14, 53, 0)) || c.StopTimes[0].DepartureTimestampReason != engine.ReasonPredicted {
+		t.Fatalf("row at C: %+v", c.StopTimes)
+	}
+	// A trip that doesn't stop there: no row. Unknown trip: not found.
+	if x, _ := fx.src.TripAt("it-Lazio-Rome_A", "20261113_14:05_it-Lazio-Rome_in1"); len(x.StopTimes) != 1 {
+		t.Fatal("in1 ends at A: one row (its arrival)")
+	}
+	if _, err := fx.src.TripAt("it-Lazio-Rome_A", "nope"); err == nil {
+		t.Fatal("unknown trip should be not found")
+	}
+	if !fx.src.Owns("20261113_14:33_it-Lazio-Rome_out1") || !fx.src.Owns("it-Lazio-Rome_A") || fx.src.Owns("it-Lazio-Cotral_A") {
+		t.Fatal("Owns")
 	}
 }

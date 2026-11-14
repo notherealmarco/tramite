@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,11 @@ type VehicleRef struct {
 	Started             *bool  `json:"started,omitempty"`
 	CurrentStopSequence int32  `json:"currentStopSequence,omitempty"`
 	CurrentStatus       string `json:"currentStatus,omitempty"`
+	// Where the bus is (live buses only).
+	Lat       float64   `json:"lat,omitempty"`
+	Lon       float64   `json:"lon,omitempty"`
+	Bearing   float32   `json:"bearing,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitzero"`
 	// How crowded the bus is now (GTFS-RT OccupancyStatus: EMPTY,
 	// MANY_SEATS_AVAILABLE, FEW_SEATS_AVAILABLE, STANDING_ROOM_ONLY,
 	// CRUSHED_STANDING_ROOM_ONLY, FULL, NOT_ACCEPTING_PASSENGERS), when the
@@ -59,7 +65,10 @@ type StopTime struct {
 	RouteType                int         `json:"routeType"`
 	DirectionID              *int8       `json:"directionId,omitempty"`
 	Headsign                 string      `json:"headsign"`
+	StopID                   string      `json:"stopId"`
 	StopSequence             int32       `json:"stopSequence"`
+	ScheduledArrival         time.Time   `json:"scheduledArrival"`
+	Arrival                  time.Time   `json:"arrival"`
 	ScheduledDeparture       time.Time   `json:"scheduledDeparture"`
 	Departure                time.Time   `json:"departure"`
 	RealTime                 bool        `json:"realTime"`
@@ -77,34 +86,65 @@ type Board struct {
 
 const lookback = 90 * time.Minute // late buses still to come
 
-// StopID accepts the source's own id or the Transitous-prefixed one.
-func (s *Source) localStopID(id string) string {
-	if p := s.Cfg.TransitousFeedID; p != "" {
-		return strings.TrimPrefix(id, p+"_")
+// Prefix of this source's ids in the API: its Transitous feed id when
+// configured (ids then match Transitous), else its own id.
+func (s *Source) Prefix() string {
+	if s.Cfg.TransitousFeedID != "" {
+		return s.Cfg.TransitousFeedID
 	}
-	return id
+	return s.Cfg.ID
+}
+
+// localID strips the prefix from a stop or route id ("it-Lazio-Rome_71527").
+func (s *Source) localID(id string) string { return strings.TrimPrefix(id, s.Prefix()+"_") }
+
+// Owns tells whether an API id (stop, route or trip) belongs to this source.
+func (s *Source) Owns(id string) bool {
+	p := s.Prefix() + "_"
+	if strings.HasPrefix(id, p) {
+		return true
+	}
+	// Trip ids: <date>_<HH:MM>_<prefix>_<trip>.
+	if date, rest, ok := strings.Cut(id, "_"); ok && len(date) == 8 {
+		if _, rest, ok := strings.Cut(rest, "_"); ok {
+			return strings.HasPrefix(rest, p)
+		}
+	}
+	return false
+}
+
+// resolveTripID reads an API trip id: <date>_<HH:MM>_<prefix>_<trip>
+// (Transitous form), or a plain GTFS trip id (run around now).
+func (s *Source) resolveTripID(id string, now time.Time) (TripDay, bool) {
+	f := s.st.feed
+	if date, rest, ok := strings.Cut(id, "_"); ok && len(date) == 8 {
+		if _, rest, ok := strings.Cut(rest, "_"); ok {
+			if raw, ok := strings.CutPrefix(rest, s.Prefix()+"_"); ok {
+				if t, ok := f.TripIdx[raw]; ok && f.Trips[t].First >= 0 {
+					if d, err := strconv.Atoi(date); err == nil {
+						return TripDay{t, d}, true
+					}
+				}
+			}
+		}
+	}
+	t, ok := f.TripIdx[strings.TrimPrefix(id, s.Prefix()+"_")]
+	if !ok || f.Trips[t].First < 0 {
+		return TripDay{}, false
+	}
+	return TripDay{t, s.guessDate(t, now)}, true
 }
 
 func (s *Source) place(stop int32) Place {
 	st := &s.st.feed.Stops[stop]
-	id := st.ID
-	if p := s.Cfg.TransitousFeedID; p != "" {
-		id = p + "_" + id
-	}
-	return Place{StopID: id, Name: st.Name, Lat: st.Lat, Lon: st.Lon}
+	return Place{StopID: s.Prefix() + "_" + st.ID, Name: st.Name, Lat: st.Lat, Lon: st.Lon}
 }
 
-// tripID in MOTIS form when the Transitous feed id is configured:
-// <service date>_<HH:MM start>_<feed>_<trip id>.
+// tripID in Transitous (MOTIS) form: <service date>_<HH:MM start>_<prefix>_<trip id>.
 func (s *Source) tripID(td TripDay) string {
 	f := s.st.feed
-	id := f.Trips[td.Trip].ID
-	p := s.Cfg.TransitousFeedID
-	if p == "" {
-		return id
-	}
 	dep := f.StartDep(td.Trip)
-	return fmt.Sprintf("%08d_%02d:%02d_%s_%s", td.Date, dep/3600, dep%3600/60, p, id)
+	return fmt.Sprintf("%08d_%02d:%02d_%s_%s", td.Date, dep/3600, dep%3600/60, s.Prefix(), f.Trips[td.Trip].ID)
 }
 
 // Departures from a stop within window, soonest first, at most n.
@@ -115,7 +155,7 @@ func (s *Source) Departures(stopID string, n int, window time.Duration) (*Board,
 	if f == nil {
 		return nil, fmt.Errorf("%s: timetable not loaded yet", s.Cfg.ID)
 	}
-	stop, ok := f.StopIdx[s.localStopID(stopID)]
+	stop, ok := f.StopIdx[s.localID(stopID)]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -150,29 +190,44 @@ func (s *Source) Departures(stopID string, n int, window time.Duration) (*Board,
 }
 
 func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window time.Duration) (StopTime, bool) {
+	d, visible := s.row(td, st, now)
+	return d, visible && d.Departure.Before(now.Add(window))
+}
+
+// row is a trip's stop time at one stop with everything known about it, and
+// whether a board should list it (not cancelled long ago, bus not past it,
+// not gone).
+func (s *Source) row(td TripDay, st gtfs.StopTime, now time.Time) (StopTime, bool) {
 	f := s.st.feed
 	tr := &f.Trips[td.Trip]
 	route := &f.Routes[tr.Route]
 	sched := s.sched(td.Date, st.Dep)
+	schedArr := s.sched(td.Date, st.Arr)
 	d := StopTime{
 		Source: s.Cfg.ID, TripID: s.tripID(td), GTFSTripID: tr.ID, ServiceDate: fmt.Sprintf("%08d", td.Date),
-		RouteID: route.ID, RouteShortName: route.Line(), RouteColor: route.Color, RouteTextColor: route.TextColor,
-		RouteType: route.Type, Headsign: tr.Headsign, StopSequence: st.Seq,
+		RouteID: s.Prefix() + "_" + route.ID, RouteShortName: route.Line(), RouteColor: route.Color, RouteTextColor: route.TextColor,
+		RouteType: route.Type, Headsign: tr.Headsign, StopSequence: st.Seq, StopID: s.place(st.Stop).StopID,
 		ScheduledDeparture: sched.UTC(), Departure: sched.UTC(), DepartureTimestampReason: ReasonNoRT,
+		ScheduledArrival: schedArr.UTC(), Arrival: schedArr.UTC(),
 		TripFrom: s.place(f.StopTimes[tr.First].Stop), TripTo: s.place(f.LastStop(td.Trip).Stop),
 	}
 	if tr.Direction >= 0 {
 		dir := tr.Direction
 		d.DirectionID = &dir
 	}
+	visible := true
 	first := f.StopTimes[tr.First].Seq == st.Seq
 	v := s.vehTripAt(now)[td]
 	if v != nil {
 		started := v.Seq == 0 || v.Seq > f.StopTimes[tr.First].Seq
 		d.Vehicle = &VehicleRef{ID: v.Key, Started: &started, CurrentStopSequence: v.Seq, CurrentStatus: v.Status,
 			OccupancyStatus: v.Occupancy, OccupancyPercentage: v.OccupancyPercentage}
+		if v.HasPos {
+			d.Vehicle.Lat, d.Vehicle.Lon, d.Vehicle.Bearing = v.Lat, v.Lon, v.Bearing
+			d.Vehicle.Timestamp = v.Timestamp.UTC()
+		}
 		if v.Seq > st.Seq {
-			return d, false // already past this stop
+			visible = false // already past this stop
 		}
 	}
 	waiting := v != nil && !*d.Vehicle.Started && first
@@ -180,11 +235,11 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 	if tu := s.tusAt(now)[td]; tu != nil {
 		if tu.Trip.Canceled {
 			d.Cancelled = true
-			return d, sched.After(now.Add(-time.Minute))
+			return d, visible && sched.After(now.Add(-time.Minute))
 		}
 		t, reason, passed, skipped := s.realtimeAt(td, tu, st, sched)
 		if passed && !waiting {
-			return d, false
+			visible = false
 		}
 		if skipped {
 			d.Cancelled = true
@@ -202,12 +257,43 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 			}
 		}
 	}
+	// The arrival moves with the departure (same delay).
+	d.Arrival = schedArr.Add(d.Departure.Sub(sched)).UTC()
 	// Gone, unless its bus is still waiting at the first stop (the operator
 	// keeps its forecast at "now" until it leaves).
 	if d.Departure.Before(now.Add(-30*time.Second)) && !waiting {
-		return d, false
+		visible = false
 	}
-	return d, d.Departure.Before(now.Add(window))
+	return d, visible
+}
+
+// TripAt is one trip's row at one stop, whether or not a board would list
+// it (bus already past, departure gone): for following a ride.
+func (s *Source) TripAt(stopID, tripID string) (*Board, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	f := s.st.feed
+	if f == nil {
+		return nil, fmt.Errorf("%s: timetable not loaded yet", s.Cfg.ID)
+	}
+	stop, ok := f.StopIdx[s.localID(stopID)]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	now := s.Now()
+	td, ok := s.resolveTripID(tripID, now)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	out := []StopTime{}
+	for _, st := range f.TripStops(td.Trip) {
+		if st.Stop == stop {
+			d, _ := s.row(td, st, now)
+			out = append(out, d)
+			break
+		}
+	}
+	return &Board{Stop: s.place(stop), StopTimes: out}, nil
 }
 
 // realtimeAt: the trip update's time at this stop. A prediction for the stop

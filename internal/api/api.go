@@ -24,6 +24,8 @@ type API struct {
 	Log *slog.Logger
 	// Heartbeat keeps SSE connections open through proxies.
 	Heartbeat time.Duration
+
+	streams registry // open SSE streams by id
 }
 
 const (
@@ -39,12 +41,13 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", a.ready)
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /v1/sources", a.sources)
-	mux.HandleFunc("GET /v1/sources/{source}/stops/{stop}/departures", a.departures)
-	mux.HandleFunc("GET /v1/sources/{source}/lines/{line}/vehicles", a.lineVehicles)
-	mux.HandleFunc("GET /v1/sources/{source}/inferred", a.inferred)
+	mux.HandleFunc("GET /v1/stops/{stop}/departures", a.departures)
+	mux.HandleFunc("GET /v1/lines/{line}/vehicles", a.lineVehicles)
+	mux.HandleFunc("GET /v1/routes/{route}/vehicles", a.routeVehicles)
 	mux.HandleFunc("GET /v1/sources/{source}/gtfs-rt/trip-updates.pb", a.tripUpdates)
 	mux.HandleFunc("GET /v1/vehicles", a.areaVehicles)
 	mux.HandleFunc("GET /v1/stream", a.stream)
+	mux.HandleFunc("POST /v1/stream/{id}/topics", a.updateTopics)
 	return cors(gzipped(mux))
 }
 
@@ -53,8 +56,8 @@ func cors(h http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Expose-Headers", "ETag")
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "If-None-Match, Last-Event-ID")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, If-None-Match, Last-Event-ID")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -99,17 +102,29 @@ func (a *API) source(w http.ResponseWriter, id string) *engine.Source {
 	return s
 }
 
+// owner is the source an API id (stop, route or trip) belongs to, by its
+// prefix; nil when no source covers it.
+func (a *API) owner(id string) *engine.Source {
+	var best *engine.Source
+	for _, s := range a.Svc.Sources {
+		if s.Owns(id) && (best == nil || len(s.Prefix()) > len(best.Prefix())) {
+			best = s
+		}
+	}
+	return best
+}
+
+// departures: a stop's next departures, or with trip= one trip's row at the
+// stop (listed whatever its state: for following a ride).
 func (a *API) departures(w http.ResponseWriter, r *http.Request) {
-	s := a.source(w, r.PathValue("source"))
+	stop := r.PathValue("stop")
+	s := a.owner(stop)
 	if s == nil {
+		http.Error(w, "no source covers stop "+stop, http.StatusNotFound)
 		return
 	}
-	n, window, err := boardParams(r.URL.Query().Get("n"), r.URL.Query().Get("window"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	b, err := s.Departures(r.PathValue("stop"), n, window)
+	q := r.URL.Query()
+	b, err := a.board(s, stop, q.Get("trip"), q.Get("n"), q.Get("window"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -117,20 +132,37 @@ func (a *API) departures(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, b)
 }
 
-func (a *API) inferred(w http.ResponseWriter, r *http.Request) {
-	s := a.source(w, r.PathValue("source"))
-	if s == nil {
-		return
+func (a *API) board(s *engine.Source, stop, trip, n, window string) (*engine.Board, error) {
+	if trip != "" {
+		return s.TripAt(stop, trip)
 	}
-	writeJSON(w, r, s.InferredDepartures())
+	nn, ww, err := boardParams(n, window)
+	if err != nil {
+		return nil, badRequest{err}
+	}
+	return s.Departures(stop, nn, ww)
 }
 
+type badRequest struct{ error }
+
 func (a *API) lineVehicles(w http.ResponseWriter, r *http.Request) {
-	s := a.source(w, r.PathValue("source"))
+	line := r.PathValue("line")
+	s := a.owner(line)
 	if s == nil {
+		http.Error(w, "no source covers line "+line, http.StatusNotFound)
 		return
 	}
-	writeJSON(w, r, s.Vehicles(r.PathValue("line"), nil))
+	writeJSON(w, r, s.Vehicles(engine.VehicleFilter{Line: line}))
+}
+
+func (a *API) routeVehicles(w http.ResponseWriter, r *http.Request) {
+	route := r.PathValue("route")
+	s := a.owner(route)
+	if s == nil {
+		http.Error(w, "no source covers route "+route, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, r, s.Vehicles(engine.VehicleFilter{Route: route}))
 }
 
 func (a *API) areaVehicles(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +177,7 @@ func (a *API) areaVehicles(w http.ResponseWriter, r *http.Request) {
 func (a *API) vehiclesIn(box engine.BBox) []engine.VehicleInfo {
 	out := []engine.VehicleInfo{}
 	for _, s := range a.Svc.Sources {
-		out = append(out, s.Vehicles("", &box)...)
+		out = append(out, s.Vehicles(engine.VehicleFilter{Box: &box})...)
 	}
 	return out
 }
@@ -207,6 +239,11 @@ func parseBBox(s string) (engine.BBox, error) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
+	var bad badRequest
+	if errors.As(err, &bad) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if errors.Is(err, engine.ErrNotFound) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
