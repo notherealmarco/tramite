@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -130,5 +131,47 @@ func TestStreamRejectsEmpty(t *testing.T) {
 	r.Body.Close()
 	if r.StatusCode != 400 {
 		t.Fatalf("got %d", r.StatusCode)
+	}
+}
+
+func TestSourceVehiclesInferredAndGzip(t *testing.T) {
+	srv, src, _ := setup(t)
+	src.Cfg.Quirks.Inference.Enabled = true
+	ts, vs, _ := live.ParseVehicles(g.Vehicles(g.At(14, 30, 0),
+		g.VP{Label: "3429", Trip: "in2", Route: "60", Dir: 1, Seq: 2, Lat: 41.905, Lon: 12.505}))
+	src.ApplyVehicles(ts, vs)
+
+	req, _ := http.NewRequest("GET", srv.URL+"/v1/vehicles?bbox=41.8,12.4,42.0,12.6", nil)
+	req.Header.Set("Accept-Encoding", "gzip") // set by hand: no transparent decoding
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("want gzip, got %q", resp.Header.Get("Content-Encoding"))
+	}
+	zr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vehicles []engine.VehicleInfo
+	if err := json.NewDecoder(zr).Decode(&vehicles); err != nil || len(vehicles) != 1 || vehicles[0].StartDate != "20261113" {
+		t.Fatalf("vehicles: %+v %v", vehicles, err)
+	}
+
+	r2, err := http.Get(srv.URL + "/v1/sources/rome/inferred")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Body.Close()
+	var inf engine.Inferred
+	if err := json.NewDecoder(r2.Body).Decode(&inf); err != nil {
+		t.Fatal(err)
+	}
+	// in2 ends at A 14:40 (timetable), ready 14:43: out1 (14:33) runs 10 min late.
+	if inf.MaxWaitSeconds != 1800 || len(inf.Departures) != 1 || inf.Departures[0].GTFSTripID != "out1" ||
+		inf.Departures[0].DelaySeconds != 600 || inf.Departures[0].Vehicle != "3429" {
+		t.Fatalf("inferred: %+v", inf)
 	}
 }

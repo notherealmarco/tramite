@@ -41,10 +41,11 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sources", a.sources)
 	mux.HandleFunc("GET /v1/sources/{source}/stops/{stop}/departures", a.departures)
 	mux.HandleFunc("GET /v1/sources/{source}/lines/{line}/vehicles", a.lineVehicles)
+	mux.HandleFunc("GET /v1/sources/{source}/inferred", a.inferred)
 	mux.HandleFunc("GET /v1/sources/{source}/gtfs-rt/trip-updates.pb", a.tripUpdates)
 	mux.HandleFunc("GET /v1/vehicles", a.areaVehicles)
 	mux.HandleFunc("GET /v1/stream", a.stream)
-	return cors(mux)
+	return cors(gzipped(mux))
 }
 
 func cors(h http.Handler) http.Handler {
@@ -114,6 +115,14 @@ func (a *API) departures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, b)
+}
+
+func (a *API) inferred(w http.ResponseWriter, r *http.Request) {
+	s := a.source(w, r.PathValue("source"))
+	if s == nil {
+		return
+	}
+	writeJSON(w, r, s.InferredDepartures())
 }
 
 func (a *API) lineVehicles(w http.ResponseWriter, r *http.Request) {

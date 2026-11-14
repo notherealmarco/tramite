@@ -10,26 +10,30 @@ import (
 
 // VehicleInfo is a live bus for the map.
 type VehicleInfo struct {
-	Source              string    `json:"source"`
-	ID                  string    `json:"id"`
-	RouteID             string    `json:"routeId,omitempty"`
-	RouteShortName      string    `json:"routeShortName,omitempty"`
-	RouteColor          string    `json:"routeColor,omitempty"`
-	RouteTextColor      string    `json:"routeTextColor,omitempty"`
-	Headsign            string    `json:"headsign,omitempty"`
-	TripID              string    `json:"tripId,omitempty"`
-	GTFSTripID          string    `json:"gtfsTripId,omitempty"`
-	DirectionID         *int8     `json:"directionId,omitempty"`
-	Lat                 float64   `json:"lat"`
-	Lon                 float64   `json:"lon"`
-	Bearing             float32   `json:"bearing,omitempty"`
-	Started             *bool     `json:"started,omitempty"`
-	CurrentStopSequence int32     `json:"currentStopSequence,omitempty"`
-	CurrentStatus       string    `json:"currentStatus,omitempty"`
-	OccupancyStatus     string    `json:"occupancyStatus,omitempty"`
-	OccupancyPercentage *uint32   `json:"occupancyPercentage,omitempty"`
-	StopID              string    `json:"stopId,omitempty"`
-	Timestamp           time.Time `json:"timestamp"`
+	Source              string  `json:"source"`
+	ID                  string  `json:"id"`
+	RouteID             string  `json:"routeId,omitempty"`
+	RouteShortName      string  `json:"routeShortName,omitempty"`
+	RouteColor          string  `json:"routeColor,omitempty"`
+	RouteTextColor      string  `json:"routeTextColor,omitempty"`
+	Headsign            string  `json:"headsign,omitempty"`
+	TripID              string  `json:"tripId,omitempty"`
+	GTFSTripID          string  `json:"gtfsTripId,omitempty"`
+	DirectionID         *int8   `json:"directionId,omitempty"`
+	Lat                 float64 `json:"lat"`
+	Lon                 float64 `json:"lon"`
+	Bearing             float32 `json:"bearing,omitempty"`
+	Started             *bool   `json:"started,omitempty"`
+	CurrentStopSequence int32   `json:"currentStopSequence,omitempty"`
+	CurrentStatus       string  `json:"currentStatus,omitempty"`
+	OccupancyStatus     string  `json:"occupancyStatus,omitempty"`
+	OccupancyPercentage *uint32 `json:"occupancyPercentage,omitempty"`
+	StopID              string  `json:"stopId,omitempty"`
+	// As in the feed's trip descriptor: service date (YYYYMMDD) and start
+	// time (HH:MM:SS) of the trip being run.
+	StartDate string    `json:"startDate,omitempty"`
+	StartTime string    `json:"startTime,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // BBox in degrees.
@@ -64,7 +68,7 @@ func (s *Source) vehicleInfo(key string, v *live.Vehicle, now time.Time) Vehicle
 	vi := VehicleInfo{Source: s.Cfg.ID, ID: key, Lat: v.Lat, Lon: v.Lon, Bearing: v.Bearing,
 		CurrentStopSequence: v.Seq, CurrentStatus: v.Status, StopID: v.StopID, Timestamp: v.Timestamp.UTC(),
 		OccupancyStatus: v.Occupancy, OccupancyPercentage: v.OccupancyPercentage,
-		RouteID: v.Trip.RouteID, GTFSTripID: v.Trip.TripID}
+		RouteID: v.Trip.RouteID, GTFSTripID: v.Trip.TripID, StartDate: v.Trip.StartDate, StartTime: v.Trip.StartTime}
 	f := s.st.feed
 	if f == nil {
 		return vi
