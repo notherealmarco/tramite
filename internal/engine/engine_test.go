@@ -303,3 +303,37 @@ func keys(m map[string]engine.StopTime) []string {
 	}
 	return k
 }
+
+// A frozen upstream: once its data is older than max_age it is ignored.
+func TestStaleFeedIgnored(t *testing.T) {
+	fx := newFixture(t, true, true)
+	fx.now = g.At(14, 40, 0)
+	fx.tripUpdates(g.TU{Trip: "out3", Vehicle: "1", Updates: []g.STU{{Seq: 1, Stop: "A", Time: g.At(15, 9, 0)}}})
+	fx.vehicles(g.VP{Label: "1", Trip: "out3", Route: "60", Seq: 1, Status: stopped, Lat: 41.9, Lon: 12.5})
+	if d := fx.board("A")["out3"]; d.DepartureTimestampReason != engine.ReasonPredicted {
+		t.Fatalf("fresh: want predicted, got %s", d.DepartureTimestampReason)
+	}
+	fx.now = g.At(14, 51, 0) // 11 min later, no new version
+	d := fx.board("A")["out3"]
+	if d.DepartureTimestampReason != engine.ReasonNoRT || d.RealTime || d.Vehicle != nil || !d.Departure.Equal(g.At(15, 5, 0)) {
+		t.Fatalf("stale: want timetable 15:05 without vehicle, got %s %s %+v", d.DepartureTimestampReason, d.Departure.In(g.Rome), d.Vehicle)
+	}
+	if vs := fx.src.Vehicles("60", nil); len(vs) != 0 {
+		t.Fatalf("stale: want no live buses, got %d", len(vs))
+	}
+	if st := fx.src.Status(); !st.VehiclesStale || !st.TripUpdatesStale || st.Inferred != 0 {
+		t.Fatalf("status: %+v", st)
+	}
+}
+
+// Buses missing after an upstream outage didn't vanish near a terminus.
+func TestNoGhostsAfterOutage(t *testing.T) {
+	fx := newFixture(t, true, true)
+	fx.now = g.At(14, 36, 0)
+	fx.vehicles(g.VP{Label: "2110", Trip: "in2", Route: "60", Dir: 1, Seq: 2, Status: transit})
+	fx.now = g.At(14, 50, 0) // next version 14 min later
+	fx.vehicles()
+	if n := fx.src.Status().Ghosts; n != 0 {
+		t.Fatalf("want no ghost after an outage, got %d", n)
+	}
+}

@@ -12,8 +12,11 @@ whole city's feed.
   requests. Realtime: adaptive polling. Tramite learns each feed's update
   rhythm, waits after a new version and checks every couple of seconds
   around the expected next one. This works when the upstream answers
-  `304 Not Modified`; otherwise it polls at a fixed, polite interval. A
-  feed that stops changing is flagged stale.
+  `304 Not Modified`; otherwise it polls at a fixed, polite interval.
+- **Stale feeds.** A feed whose own timestamp is older than `max_age`
+  (default 10 min) is flagged stale and its data ignored: no live buses,
+  departures back on the timetable, polling slowed to `min_poll`. It's also
+  flagged when it stops changing for much longer than its usual interval.
 - **Matching.** Realtime trips are matched to the timetable by trip id, else
   by run (line, direction, start time) when the ids come from another
   timetable version.

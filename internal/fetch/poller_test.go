@@ -73,3 +73,20 @@ func TestLearnedSchedule(t *testing.T) {
 		t.Fatalf("long overdue: back off to 5x FastPoll, got %s", d)
 	}
 }
+
+func TestFrozenFeed(t *testing.T) {
+	p := &Poller{MinPoll: 15 * time.Second, FastPoll: 2 * time.Second, MaxAge: 10 * time.Minute, supports304: true}
+	v := time.Date(2026, 11, 13, 18, 27, 25, 0, time.UTC)
+	// One version only (started while the upstream was already frozen).
+	p.Observe(v, v.Add(7*time.Hour))
+	now := v.Add(7*time.Hour + time.Minute)
+	if !p.Stale(now) {
+		t.Fatal("a 7 h old feed must be stale")
+	}
+	if d := p.NextDelay(now); d != 15*time.Second {
+		t.Fatalf("frozen: back off to MinPoll, got %s", d)
+	}
+	if p.Stale(v.Add(5 * time.Minute)) {
+		t.Fatal("5 min old is not stale")
+	}
+}

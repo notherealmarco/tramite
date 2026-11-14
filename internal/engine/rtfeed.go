@@ -16,7 +16,8 @@ func (s *Source) CorrectedTripUpdates() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var m rt.FeedMessage
-	if len(s.st.tuRaw) > 0 {
+	now := s.Now()
+	if len(s.st.tuRaw) > 0 && s.tusFresh(now) {
 		if err := proto.Unmarshal(s.st.tuRaw, &m); err != nil {
 			return nil, err
 		}
@@ -28,8 +29,9 @@ func (s *Source) CorrectedTripUpdates() ([]byte, error) {
 	if f == nil {
 		return proto.Marshal(&m)
 	}
-	tds := make([]TripDay, 0, len(s.st.inferred))
-	for td := range s.st.inferred {
+	inferred := s.inferredAt(now)
+	tds := make([]TripDay, 0, len(inferred))
+	for td := range inferred {
 		tds = append(tds, td)
 	}
 	sort.Slice(tds, func(a, b int) bool {
@@ -39,7 +41,7 @@ func (s *Source) CorrectedTripUpdates() ([]byte, error) {
 		return tds[a].Trip < tds[b].Trip
 	})
 	for _, td := range tds {
-		in := s.st.inferred[td]
+		in := inferred[td]
 		tr := &f.Trips[td.Trip]
 		first := f.StopTimes[tr.First]
 		delay := int32(in.Delay.Seconds())

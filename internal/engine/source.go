@@ -157,6 +157,11 @@ func (s *Source) applyTripUpdates(ts time.Time, tus []live.TripUpdate, raw []byt
 func (s *Source) applyVehicles(ts time.Time, vs []live.Vehicle, trackGhosts bool) {
 	now := s.Now()
 	prev, prevOf := s.st.vehicles, s.st.vehOf
+	// After an upstream outage the old snapshot says nothing about who
+	// vanished just now.
+	if !s.fresh(s.st.vehTS, now) {
+		prev = nil
+	}
 	s.st.vehTS = ts
 	s.st.vehicles = make(map[string]*live.Vehicle, len(vs))
 	s.st.vehOf = make(map[string]TripDay, len(vs))
@@ -233,7 +238,11 @@ func (s *Source) recompute() {
 		s.st.inferred = map[TripDay]Inference{}
 		return
 	}
-	s.st.inferred = s.infer(s.Now())
+	if !s.vehiclesFresh(s.Now()) {
+		s.st.inferred = map[TripDay]Inference{}
+	} else {
+		s.st.inferred = s.infer(s.Now())
+	}
 	onTime, delayed := 0, 0
 	for _, in := range s.st.inferred {
 		if in.Delay > 0 {
@@ -244,6 +253,52 @@ func (s *Source) recompute() {
 	}
 	metrics.Inferred.WithLabelValues(s.Cfg.ID, "on_time").Set(float64(onTime))
 	metrics.Inferred.WithLabelValues(s.Cfg.ID, "delayed").Set(float64(delayed))
+}
+
+// Realtime data is used only while fresh: a feed whose timestamp is older
+// than max_age (upstream frozen) counts as absent. Checked at query time,
+// since a feed goes stale by not changing.
+func (s *Source) fresh(ts, now time.Time) bool {
+	return !ts.IsZero() && now.Sub(ts) <= s.Cfg.Realtime.MaxAge.Duration
+}
+
+func (s *Source) vehiclesFresh(now time.Time) bool { return s.fresh(s.st.vehTS, now) }
+func (s *Source) tusFresh(now time.Time) bool      { return s.fresh(s.st.tuTS, now) }
+
+func (s *Source) tusAt(now time.Time) map[TripDay]*live.TripUpdate {
+	if s.tusFresh(now) {
+		return s.st.tus
+	}
+	return nil
+}
+
+func (s *Source) vehTripAt(now time.Time) map[TripDay]*live.Vehicle {
+	if s.vehiclesFresh(now) {
+		return s.st.vehTrip
+	}
+	return nil
+}
+
+func (s *Source) vehOfAt(now time.Time) map[string]TripDay {
+	if s.vehiclesFresh(now) {
+		return s.st.vehOf
+	}
+	return nil
+}
+
+func (s *Source) vehiclesAt(now time.Time) map[string]*live.Vehicle {
+	if s.vehiclesFresh(now) {
+		return s.st.vehicles
+	}
+	return nil
+}
+
+// inferredAt: inferences need the vehicle positions they came from.
+func (s *Source) inferredAt(now time.Time) map[TripDay]Inference {
+	if s.vehiclesFresh(now) {
+		return s.st.inferred
+	}
+	return nil
 }
 
 // resolve maps a realtime trip to a run of the timetable: by trip id, else
@@ -299,9 +354,9 @@ func (s *Source) predictedEnd(td TripDay, now time.Time) time.Time {
 	f := s.st.feed
 	last := f.LastStop(td.Trip)
 	end := s.sched(td.Date, last.Arr)
-	tu := s.st.tus[td]
+	tu := s.tusAt(now)[td]
 	if tu == nil || len(tu.Updates) == 0 {
-		if v := s.st.vehTrip[td]; v != nil && end.Before(now) {
+		if v := s.vehTripAt(now)[td]; v != nil && end.Before(now) {
 			return now // running late, no prediction: about now
 		}
 		return end

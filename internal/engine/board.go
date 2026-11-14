@@ -159,7 +159,7 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 		d.DirectionID = &dir
 	}
 	first := f.StopTimes[tr.First].Seq == st.Seq
-	v := s.st.vehTrip[td]
+	v := s.vehTripAt(now)[td]
 	if v != nil {
 		started := v.Seq == 0 || v.Seq > f.StopTimes[tr.First].Seq
 		d.Vehicle = &VehicleRef{ID: v.Key, Started: &started, CurrentStopSequence: v.Seq, CurrentStatus: v.Status}
@@ -169,7 +169,7 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 	}
 	waiting := v != nil && !*d.Vehicle.Started && first
 
-	if tu := s.st.tus[td]; tu != nil {
+	if tu := s.tusAt(now)[td]; tu != nil {
 		if tu.Trip.Canceled {
 			d.Cancelled = true
 			return d, sched.After(now.Add(-time.Minute))
@@ -186,7 +186,7 @@ func (s *Source) departure(td TripDay, st gtfs.StopTime, now time.Time, window t
 		}
 	}
 	if !d.RealTime {
-		if in, ok := s.st.inferred[td]; ok {
+		if in, ok := s.inferredAt(now)[td]; ok {
 			t := sched.Add(in.Delay)
 			if t.Sub(now) <= s.Cfg.Quirks.Inference.MaxWait.Duration {
 				d.Departure, d.DepartureTimestampReason = t.UTC(), ReasonInferred

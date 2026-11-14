@@ -43,11 +43,12 @@ func (s *Source) Vehicles(line string, box *BBox) []VehicleInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []VehicleInfo{}
-	for k, v := range s.st.vehicles {
+	now := s.Now()
+	for k, v := range s.vehiclesAt(now) {
 		if !v.HasPos || (box != nil && !box.Contains(v.Lat, v.Lon)) {
 			continue
 		}
-		vi := s.vehicleInfo(k, v)
+		vi := s.vehicleInfo(k, v, now)
 		if line != "" && !strings.EqualFold(vi.RouteShortName, line) && !strings.EqualFold(vi.RouteID, line) {
 			continue
 		}
@@ -57,7 +58,7 @@ func (s *Source) Vehicles(line string, box *BBox) []VehicleInfo {
 	return out
 }
 
-func (s *Source) vehicleInfo(key string, v *live.Vehicle) VehicleInfo {
+func (s *Source) vehicleInfo(key string, v *live.Vehicle, now time.Time) VehicleInfo {
 	vi := VehicleInfo{Source: s.Cfg.ID, ID: key, Lat: v.Lat, Lon: v.Lon, Bearing: v.Bearing,
 		CurrentStopSequence: v.Seq, CurrentStatus: v.Status, StopID: v.StopID, Timestamp: v.Timestamp.UTC(),
 		RouteID: v.Trip.RouteID, GTFSTripID: v.Trip.TripID}
@@ -65,7 +66,7 @@ func (s *Source) vehicleInfo(key string, v *live.Vehicle) VehicleInfo {
 	if f == nil {
 		return vi
 	}
-	if td, ok := s.st.vehOf[key]; ok {
+	if td, ok := s.vehOfAt(now)[key]; ok {
 		tr := &f.Trips[td.Trip]
 		r := &f.Routes[tr.Route]
 		vi.RouteID, vi.RouteShortName, vi.RouteColor, vi.RouteTextColor = r.ID, r.Line(), r.Color, r.TextColor
@@ -97,8 +98,11 @@ type Status struct {
 	VehiclesAt     time.Time `json:"vehiclesAt,omitzero"`
 	TripUpdates    int       `json:"tripUpdates"`
 	TripUpdatesAt  time.Time `json:"tripUpdatesAt,omitzero"`
-	Ghosts         int       `json:"ghosts"`
-	Inferred       int       `json:"inferred"`
+	// Stale: the feed's last version is older than max_age; its data is ignored.
+	VehiclesStale    bool `json:"vehiclesStale"`
+	TripUpdatesStale bool `json:"tripUpdatesStale"`
+	Ghosts           int  `json:"ghosts"`
+	Inferred         int  `json:"inferred"`
 }
 
 func (s *Source) Status() Status {
@@ -106,7 +110,10 @@ func (s *Source) Status() Status {
 	defer s.mu.RUnlock()
 	st := Status{ID: s.Cfg.ID, Name: s.Cfg.Name, TransitousFeed: s.Cfg.TransitousFeedID,
 		Vehicles: len(s.st.vehicles), VehiclesAt: s.st.vehTS.UTC(), TripUpdates: len(s.st.tus),
-		TripUpdatesAt: s.st.tuTS.UTC(), Ghosts: len(s.st.ghosts), Inferred: len(s.st.inferred)}
+		TripUpdatesAt: s.st.tuTS.UTC(), Ghosts: len(s.st.ghosts), Inferred: len(s.inferredAt(s.Now()))}
+	now := s.Now()
+	st.VehiclesStale = s.st.vehicles != nil && !s.vehiclesFresh(now)
+	st.TripUpdatesStale = s.st.tus != nil && !s.tusFresh(now)
 	if f := s.st.feed; f != nil {
 		st.StaticVersion, st.Trips = f.Version, len(f.Trips)
 	}

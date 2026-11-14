@@ -119,6 +119,24 @@ func (s *Service) Run(ctx context.Context) {
 			go func() { defer wg.Done(); s.runRealtime(ctx, src, feed, url, ready) }()
 		}
 	}
+	// Time moves even when feeds don't: departures leave, a frozen feed goes
+	// stale. Streams recompute (and send only what changed).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				for _, src := range s.Sources {
+					s.Notify(src.Cfg.ID)
+				}
+			}
+		}
+	}()
 	wg.Wait()
 }
 
@@ -215,7 +233,8 @@ func (s *Service) runRealtime(ctx context.Context, src *engine.Source, feed, url
 	case <-ready:
 	}
 	p := &fetch.Poller{Client: s.client, URL: url, Headers: s.headers(cfg),
-		MinPoll: cfg.Realtime.MinPoll.Duration, FastPoll: cfg.Realtime.FastPoll.Duration}
+		MinPoll: cfg.Realtime.MinPoll.Duration, FastPoll: cfg.Realtime.FastPoll.Duration,
+		MaxAge: cfg.Realtime.MaxAge.Duration}
 	s.mu.Lock()
 	s.pollers[cfg.ID+"/"+feed] = p
 	s.mu.Unlock()

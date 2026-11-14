@@ -20,6 +20,9 @@ sources:
       # update (~every 30 s), wait otherwise.
       fast_poll: 2s
       min_poll: 15s
+      # A feed whose own timestamp is older than this is stale: its data is
+      # ignored (no live buses, departures back on the timetable).
+      max_age: 10m
     # Keep every feed version under data/raw (about 1 GB/day for Rome).
     archive: false
     quirks:

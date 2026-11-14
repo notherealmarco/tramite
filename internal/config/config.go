@@ -57,6 +57,9 @@ type RealtimeFeed struct {
 	// FastPoll is the check interval around an expected update when the
 	// upstream supports conditional requests.
 	FastPoll Duration `yaml:"fast_poll"`
+	// MaxAge: a feed whose own timestamp is older than this is stale and
+	// ignored (buses not shown, departures back on the timetable).
+	MaxAge Duration `yaml:"max_age"`
 }
 
 // Quirks switches on processing a source needs. Everything is off by default:
@@ -148,6 +151,7 @@ func (c *Config) applyDefaults() {
 		def(&s.Static.CheckEvery, 6*time.Hour)
 		def(&s.Realtime.MinPoll, 15*time.Second)
 		def(&s.Realtime.FastPoll, 2*time.Second)
+		def(&s.Realtime.MaxAge, 10*time.Minute)
 		def(&s.Quirks.Ghosts.Hold, 15*time.Minute)
 		if s.Quirks.Ghosts.MaxStopsLeft == 0 {
 			s.Quirks.Ghosts.MaxStopsLeft = 2

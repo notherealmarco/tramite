@@ -45,17 +45,18 @@ func (s *Source) infer(now time.Time) map[TripDay]Inference {
 		}
 	}
 
+	vehTrip, vehOf, tus := s.vehTripAt(now), s.vehOfAt(now), s.tusAt(now)
 	out := map[TripDay]Inference{}
 	for k, runs := range groups {
 		sort.Slice(runs, func(a, b int) bool { return runs[a].sched.Before(runs[b].sched) })
 		var needing []run
 		anyTimetable := false
 		for _, r := range runs {
-			if s.st.vehTrip[r.td] != nil {
+			if vehTrip[r.td] != nil {
 				continue // its bus is already on it
 			}
 			needing = append(needing, r)
-			if s.st.tus[r.td] == nil {
+			if tus[r.td] == nil {
 				anyTimetable = true
 			}
 		}
@@ -79,7 +80,7 @@ func (s *Source) infer(now time.Time) map[TripDay]Inference {
 		limit := now.Add(q.Horizon.Duration)
 
 		var buses []incoming
-		for key, td := range s.st.vehOf {
+		for key, td := range vehOf {
 			tr := &f.Trips[td.Trip]
 			if tr.Route != k.route || own[td.Trip] || !otherWay(tr.Direction) || !near(f.LastStop(td.Trip).Stop) {
 				continue
@@ -122,7 +123,7 @@ func (s *Source) infer(now time.Time) map[TripDay]Inference {
 			}
 			ready := buses[b].ready.Add(q.Turnaround.Duration)
 			delay := ready.Sub(r.sched)
-			live := s.st.tus[r.td] != nil
+			live := tus[r.td] != nil
 			// Too late for this one (every later bus is later still): it stays
 			// on the timetable and this bus goes to the next departure. A
 			// live departure keeps its bus whatever the timetable says.

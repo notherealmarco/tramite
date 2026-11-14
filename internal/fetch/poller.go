@@ -34,6 +34,9 @@ type Poller struct {
 	MinPoll time.Duration
 	// FastPoll: interval around an expected update when it can.
 	FastPoll time.Duration
+	// MaxAge: a newest version older than this means the upstream is
+	// frozen (stale); 0 disables the check.
+	MaxAge time.Duration
 
 	mu           sync.Mutex
 	lastModified string
@@ -144,10 +147,14 @@ func (p *Poller) Interval() time.Duration {
 	return d[len(d)/2]
 }
 
-// Stale: no new version for much longer than usual.
+// Stale: the newest version is older than MaxAge, or no new version came
+// for much longer than usual.
 func (p *Poller) Stale(now time.Time) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen(now) {
+		return true
+	}
 	d := p.intervals()
 	if len(d) < 2 || p.lastNew.IsZero() {
 		return false
@@ -159,6 +166,11 @@ func (p *Poller) Stale(now time.Time) bool {
 	return now.Sub(p.lastNew) > limit
 }
 
+// frozen: the newest version is older than MaxAge (caller holds mu).
+func (p *Poller) frozen(now time.Time) bool {
+	return p.MaxAge > 0 && len(p.versions) > 0 && now.Sub(p.versions[len(p.versions)-1]) > p.MaxAge
+}
+
 // NextDelay says how long to wait before the next check.
 //
 // With conditional requests (304) checks are cheap: wait until shortly
@@ -168,7 +180,8 @@ func (p *Poller) Stale(now time.Time) bool {
 func (p *Poller) NextDelay(now time.Time) time.Duration {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.supports304 {
+	if !p.supports304 || p.frozen(now) {
+		// Frozen upstream: keep checking, at the polite pace.
 		return p.MinPoll
 	}
 	d := p.intervals()
