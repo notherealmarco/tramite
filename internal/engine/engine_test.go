@@ -506,3 +506,20 @@ func TestNoDataStopTakesThePreviousDelay(t *testing.T) {
 		t.Fatalf("C alone: %+v", c)
 	}
 }
+
+// The bus a departure waits for is late, and the feed marks its last stop
+// "no data" (with the timetable time in it): it reaches the terminus as
+// late as its last real prediction says, not on time.
+func TestInferredFromLastRealPrediction(t *testing.T) {
+	fx := newFixture(t, true, true)
+	fx.now = g.At(14, 40, 0)
+	fx.tripUpdates(g.TU{Trip: "in2", Vehicle: "3429", Updates: []g.STU{
+		{Seq: 2, Stop: "B", Time: g.At(14, 45, 0)}, // timetable 14:30, then 10 min to A
+		{Seq: 3, Stop: "A", Time: g.At(14, 40, 0), NoData: true},
+	}})
+	fx.vehicles(g.VP{Label: "3429", Trip: "in2", Route: "60", Dir: 1, Seq: 2, Status: transit})
+	a := fx.board("A")["out2"] // 14:49, bus at A 14:55, ready 14:58
+	if a.DepartureTimestampReason != engine.ReasonInferred || !a.Departure.Equal(g.At(14, 58, 0)) {
+		t.Fatalf("A: want inferred 14:58, got %s %s", a.DepartureTimestampReason, a.Departure.In(g.Rome))
+	}
+}

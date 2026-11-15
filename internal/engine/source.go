@@ -350,22 +350,28 @@ func (s *Source) sched(date int, secs int32) time.Time {
 
 // predictedEnd: when a run reaches its last stop, best estimate. The last
 // realtime prediction, carried to the end with the timetabled minutes left.
+// Stops the feed marks as skipped or as having no data don't count (Rome:
+// the last stop of nearly every trip is "no data", with the timetable time
+// in it).
 func (s *Source) predictedEnd(td TripDay, now time.Time) time.Time {
 	f := s.st.feed
 	last := f.LastStop(td.Trip)
 	end := s.sched(td.Date, last.Arr)
-	tu := s.tusAt(now)[td]
-	if tu == nil || len(tu.Updates) == 0 {
+	var u *live.StopTimeUpdate
+	if tu := s.tusAt(now)[td]; tu != nil {
+		for i := len(tu.Updates) - 1; i >= 0 && u == nil; i-- {
+			if x := &tu.Updates[i]; !x.NoData && !x.Skipped && !x.Time().IsZero() {
+				u = x
+			}
+		}
+	}
+	if u == nil {
 		if v := s.vehTripAt(now)[td]; v != nil && end.Before(now) {
 			return now // running late, no prediction: about now
 		}
 		return end
 	}
-	u := tu.Updates[len(tu.Updates)-1]
 	t := u.Time()
-	if t.IsZero() {
-		return end
-	}
 	if u.Seq == last.Seq || (u.Seq == 0 && u.StopID == f.Stops[last.Stop].ID) {
 		return t
 	}
