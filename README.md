@@ -1,6 +1,6 @@
 # Tramite
 
-The real-time API server for [https://github.com/notherealmarco/trames](Trames)
+The real-time API server for [Trames](https://github.com/notherealmarco/trames)
 
 Realtime transit data, prepared from GTFS feeds for the app. Tramite fetches the
 static timetable and the GTFS-Realtime feeds of each configured source, keeps
