@@ -38,7 +38,7 @@ const maxTopics = 200
 // A topic is one thing a stream follows.
 type topic struct {
 	name    string // as written by the client, echoed in events
-	kind    string // event name: "departures" or "vehicles"
+	kind    string // event name: "departures", "trip" or "vehicles"
 	source  string // source whose changes affect it; "" = any
 	compute func() (any, error)
 	last    []byte // last data sent
@@ -74,6 +74,24 @@ func (a *API) parseTopic(name string) (*topic, error) {
 		}
 		return &topic{name: name, kind: "departures", source: s.Cfg.ID,
 			compute: func() (any, error) { return a.board(s, stop, trip, line, n, "") }}, nil
+	case "trip":
+		parts := strings.Split(v, ",")
+		trip, line, stop := parts[0], "", ""
+		for _, p := range parts[1:] {
+			if l, ok := strings.CutPrefix(p, "line="); ok {
+				line = l
+			} else if x, ok := strings.CutPrefix(p, "stop="); ok {
+				stop = x
+			} else {
+				return nil, fmt.Errorf("topic %q: unknown option %q (line=, stop=)", name, p)
+			}
+		}
+		s := a.owner(trip)
+		if s == nil {
+			return nil, fmt.Errorf("topic %q: no source covers this trip", name)
+		}
+		return &topic{name: name, kind: "trip", source: s.Cfg.ID,
+			compute: func() (any, error) { return s.Trip(trip, line, stop) }}, nil
 	case "line", "route":
 		s := a.owner(v)
 		if s == nil {
@@ -93,7 +111,7 @@ func (a *API) parseTopic(name string) (*topic, error) {
 		return &topic{name: name, kind: "vehicles",
 			compute: func() (any, error) { return a.vehiclesIn(box), nil }}, nil
 	}
-	return nil, fmt.Errorf("topic %q: unknown kind %q (departures, line, route, bbox)", name, kind)
+	return nil, fmt.Errorf("topic %q: unknown kind %q (departures, trip, line, route, bbox)", name, kind)
 }
 
 // change is a subscription update sent to a stream's goroutine.

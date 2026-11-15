@@ -49,6 +49,7 @@ Tramite finds the source from the prefix; an id no source covers is a 404.
 | `GET /v1/sources` | what Tramite covers (`idPrefix` per source), timetable version, feed freshness |
 | `GET /v1/stops/{stop}/departures?n=20&window=2h` | a stop's departures |
 | `GET /v1/stops/{stop}/departures?trip={trip}[&line={line}]` | one trip's row at that stop, whatever its state (bus already past, departure gone): for following a ride. A trip id from another timetable version is matched by run (its date and start minute, the stop, and `line` when given) |
+| `GET /v1/trips/{trip}[?line={line}&stop={stop}]` | a whole trip: every stop in order with its times, and its bus. `stop` (a stop it calls at) and `line` let a trip id from another timetable version be matched by run; without `stop` such an id is a 404 |
 | `GET /v1/lines/{line}/vehicles` | live buses of a line |
 | `GET /v1/routes/{route}/vehicles` | live buses of one GTFS route |
 | `GET /v1/vehicles?bbox=minLat,minLon,maxLat,maxLon` | live buses in an area, all sources |
@@ -73,6 +74,7 @@ Topics:
 |---|---|---|
 | `departures=<stop>[,<n>]` | `departures` | the stop's board |
 | `departures=<stop>,trip=<trip>[,line=<line>]` | `departures` | that trip's row at the stop |
+| `trip=<trip>[,line=<line>][,stop=<stop>]` | `trip` | the whole trip |
 | `line=<line>` / `route=<route>` | `vehicles` | buses of a line / route |
 | `bbox=<minLat>,<minLon>,<maxLat>,<maxLon>` | `vehicles` | buses in the area |
 
@@ -96,6 +98,17 @@ gzipped when the client accepts it.
 `vehicle.id` is the bus expected to run the departure. Live buses also come
 with their position (`vehicle.lat`, `lon`, `bearing`, `timestamp`). Each row
 has `arrival`/`scheduledArrival` too (same delay as the departure).
+
+### Trip fields
+
+A trip answer has the trip once (`tripId`, `gtfsTripId`, `routeShortName`,
+`headsign`, `tripFrom`, `tripTo`, `vehicle`, `cancelled`, ...) and
+`stopTimes`: one entry per stop in order, with `stopId`, `name`, `lat`,
+`lon`, `stopSequence`, the four times, `realTime`,
+`departureTimestampReason` and `cancelled` (that stop is skipped). Stops the
+bus has passed (`stopSequence` < `vehicle.currentStopSequence`) are on the
+timetable. A stop on the trip twice is listed twice. An inferred trip is
+`INFERRED` at every stop, with the delay of its first.
 
 `vehicle.occupancyStatus` (and on the vehicles endpoints): how crowded the
 bus is now, GTFS-RT `OccupancyStatus` names (`EMPTY`,

@@ -42,6 +42,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /v1/sources", a.sources)
 	mux.HandleFunc("GET /v1/stops/{stop}/departures", a.departures)
+	mux.HandleFunc("GET /v1/trips/{trip}", a.trip)
 	mux.HandleFunc("GET /v1/lines/{line}/vehicles", a.lineVehicles)
 	mux.HandleFunc("GET /v1/routes/{route}/vehicles", a.routeVehicles)
 	mux.HandleFunc("GET /v1/sources/{source}/gtfs-rt/trip-updates.pb", a.tripUpdates)
@@ -146,6 +147,24 @@ func (a *API) board(s *engine.Source, stop, trip, line, n, window string) (*engi
 }
 
 type badRequest struct{ error }
+
+// trip: a whole trip, every stop with its times. line= and stop= (a stop it
+// calls at) help match a trip id from another timetable version.
+func (a *API) trip(w http.ResponseWriter, r *http.Request) {
+	trip := r.PathValue("trip")
+	s := a.owner(trip)
+	if s == nil {
+		http.Error(w, "no source covers trip "+trip, http.StatusNotFound)
+		return
+	}
+	q := r.URL.Query()
+	t, err := s.Trip(trip, q.Get("line"), q.Get("stop"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, r, t)
+}
 
 func (a *API) lineVehicles(w http.ResponseWriter, r *http.Request) {
 	line := r.PathValue("line")

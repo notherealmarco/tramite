@@ -422,3 +422,62 @@ func TestTripAtMatchesRunOfAnotherVersion(t *testing.T) {
 		t.Fatal("the service runs every day: the 12th matches too")
 	}
 }
+
+// A whole trip: every stop with its time, the prediction carried forward,
+// the bus once.
+func TestTripView(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 34, 0)
+	fx.tripUpdates(g.TU{Trip: "out1", Updates: []g.STU{{Seq: 1, Stop: "A", Time: g.At(14, 38, 0)}}})
+	fx.vehicles(g.VP{Label: "5039", Trip: "out1", Route: "60", Seq: 1, Status: stopped, Lat: 41.9, Lon: 12.5})
+	v, err := fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if err != nil || len(v.StopTimes) != 3 {
+		t.Fatalf("Trip: %+v %v", v, err)
+	}
+	if v.GTFSTripID != "out1" || v.RouteShortName != "60" || v.Vehicle == nil || v.Vehicle.ID != "5039" || v.Vehicle.Lat == 0 ||
+		v.TripTo.StopID != "it-Lazio-Rome_C" {
+		t.Fatalf("trip: %+v %+v", v, v.Vehicle)
+	}
+	a, b, c := v.StopTimes[0], v.StopTimes[1], v.StopTimes[2]
+	if a.StopID != "it-Lazio-Rome_A" || a.Name != "LGO PUGLIESE" || a.StopSequence != 1 ||
+		a.DepartureTimestampReason != engine.ReasonPredicted || !a.Departure.Equal(g.At(14, 38, 0)) {
+		t.Fatalf("A: %+v", a)
+	}
+	if b.DepartureTimestampReason != engine.ReasonPropagated || !b.Departure.Equal(g.At(14, 45, 0)) || !b.ScheduledDeparture.Equal(g.At(14, 40, 0)) {
+		t.Fatalf("B: %+v", b)
+	}
+	if c.StopSequence != 3 || !c.Arrival.Equal(g.At(14, 55, 0)) || !c.RealTime {
+		t.Fatalf("C: %+v", c)
+	}
+	// Timetable only: every stop on the timetable, no bus.
+	if v, err := fx.src.Trip("20261113_14:49_it-Lazio-Rome_out2", "", ""); err != nil || v.Vehicle != nil ||
+		v.StopTimes[1].DepartureTimestampReason != engine.ReasonNoRT || !v.StopTimes[1].Departure.Equal(g.At(14, 56, 0)) {
+		t.Fatalf("out2: %+v %v", v, err)
+	}
+	// Another timetable version: matched by run, given a stop it calls at.
+	if v, err := fx.src.Trip("20261113_14:49_it-Lazio-Rome_old42", "it-Lazio-Rome_60", "it-Lazio-Rome_B"); err != nil || v.GTFSTripID != "out2" {
+		t.Fatalf("run match: %+v %v", v, err)
+	}
+	if _, err := fx.src.Trip("20261113_14:49_it-Lazio-Rome_old42", "it-Lazio-Rome_60", ""); err == nil {
+		t.Fatal("an unknown id without a stop is not found")
+	}
+}
+
+// An inferred trip is inferred at every stop, with the delay of its first.
+func TestTripViewInferred(t *testing.T) {
+	fx := newFixture(t, true, false)
+	fx.vehicles(g.VP{Label: "3429", Trip: "in2", Route: "60", Dir: 1, Seq: 2, Lat: 41.905, Lon: 12.505})
+	v, err := fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if err != nil || len(v.StopTimes) != 3 {
+		t.Fatalf("Trip: %+v %v", v, err)
+	}
+	if v.Vehicle == nil || v.Vehicle.ID != "3429" {
+		t.Fatalf("expected bus: %+v", v.Vehicle)
+	}
+	for i, want := range []time.Time{g.At(14, 43, 0), g.At(14, 50, 0), g.At(15, 0, 0)} {
+		st := v.StopTimes[i]
+		if st.DepartureTimestampReason != engine.ReasonInferred || st.RealTime || !st.Departure.Equal(want) || !st.Arrival.Equal(want) {
+			t.Fatalf("stop %d: %+v, want %s", i, st, want)
+		}
+	}
+}

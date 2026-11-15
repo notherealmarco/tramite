@@ -168,17 +168,18 @@ func TestStreamTopics(t *testing.T) {
 		r.Body.Close()
 		return r.StatusCode
 	}
-	if c := post(`{"add":["line=rome_60","departures=rome_A,trip=20261113_14:33_rome_out1"]}`); c != 204 {
+	if c := post(`{"add":["line=rome_60","departures=rome_A,trip=20261113_14:33_rome_out1","trip=20261113_14:49_rome_out2,stop=rome_B"]}`); c != 204 {
 		t.Fatalf("add: %d", c)
 	}
 	got := map[string]string{}
-	for range 2 {
+	for range 3 {
 		ev, d := next()
 		var e struct{ Topic string }
 		json.Unmarshal([]byte(d), &e)
 		got[e.Topic] = ev
 	}
-	if got["line=rome_60"] != "vehicles" || got["departures=rome_A,trip=20261113_14:33_rome_out1"] != "departures" {
+	if got["line=rome_60"] != "vehicles" || got["departures=rome_A,trip=20261113_14:33_rome_out1"] != "departures" ||
+		got["trip=20261113_14:49_rome_out2,stop=rome_B"] != "trip" {
 		t.Fatalf("current state on subscribe: %v", got)
 	}
 	// Unsubscribe the line: a new bus on it is not pushed; the trip still is.
@@ -193,6 +194,8 @@ func TestStreamTopics(t *testing.T) {
 	}
 	for body, want := range map[string]int{
 		`{"add":["nope=1"]}`:          400,
+		`{"add":["trip=zz_1"]}`:       400,
+		`{"add":["trip=rome_1,x=1"]}`: 400,
 		`{"add":["departures=zz_A"]}`: 400,
 		`not json`:                    400,
 	} {
@@ -246,5 +249,23 @@ func TestAreaVehiclesTripRowAndGzip(t *testing.T) {
 	if len(b.StopTimes) != 1 || b.StopTimes[0].DepartureTimestampReason != engine.ReasonInferred ||
 		!b.StopTimes[0].Departure.Equal(g.At(14, 43, 0)) || b.StopTimes[0].Vehicle.ID != "3429" {
 		t.Fatalf("trip row: %+v", b.StopTimes)
+	}
+
+	// The whole trip: every stop, the expected bus.
+	r3, err := http.Get(srv.URL + "/v1/trips/" + url.PathEscape("20261113_14:33_rome_out1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r3.Body.Close()
+	var tv engine.TripView
+	if err := json.NewDecoder(r3.Body).Decode(&tv); err != nil {
+		t.Fatal(err)
+	}
+	if len(tv.StopTimes) != 3 || tv.Vehicle == nil || tv.Vehicle.ID != "3429" || tv.StopTimes[2].StopID != "rome_C" ||
+		!tv.StopTimes[2].Arrival.Equal(g.At(15, 0, 0)) {
+		t.Fatalf("trip: %+v", tv)
+	}
+	if r4, _ := http.Get(srv.URL + "/v1/trips/zz_nope"); r4.StatusCode != 404 {
+		t.Fatalf("unknown trip: %d", r4.StatusCode)
 	}
 }
