@@ -2,11 +2,13 @@
 
 The real-time API server for [https://github.com/notherealmarco/trames](Trames)
 
-Realtime transit data, prepared from GTFS feeds for apps. Tramite fetches the
+Realtime transit data, prepared from GTFS feeds for the app. Tramite fetches the
 static timetable and the GTFS-Realtime feeds of each configured source, keeps
 them in memory, fixes what it knows how to fix, and serves small,
 ready-to-display answers (JSON, pushed over SSE), so clients never download a
 whole city's feed.
+
+Many quirks have been added to workaround issues in the official feed of my city (Rome). 
 
 ## What it does
 
@@ -24,13 +26,12 @@ whole city's feed.
   timetable version.
 - **Quirks**, switched on per source:
   - `day_off_times`: a prediction more than 12 hours from the timetable has
-    the right time on the wrong day (Rome, on trips running after midnight):
+    the right time on the wrong day:
     it is moved by whole days to the day nearest the timetable, or dropped
     if it is then still more than `max_delay` (default 3 h) away. Counted in
     `tramite_day_off_times_total`.
   - `ghost_memory`: buses that vanish from the feeds near the end of their
-    trip (Rome: about one stop before the end, until the driver sets the next
-    trip) are remembered for a while.
+    trip are remembered for a while.
   - `inference`: a timetable-only departure from a terminus gets the bus
     that should run it: one heading there (other direction) or one
     remembered there. On time, or late by the time the bus can be ready.
@@ -146,20 +147,3 @@ Set `data_dir: /data` in the config used in the container.
 Replaying archived feeds: serve the files over HTTP, point the config at
 them and start with `-clock 2026-11-13T14:43:50+01:00` so "now" is when they
 were recorded.
-
-Memory: Rome's full timetable (166k trips, 5M stop times) loads in about 3 s
-and the process runs at about 260 MB.
-
-## Development and releases
-
-- `just test`: vet, gofmt check and tests with the race detector (what CI
-  runs on `devel` and pull requests).
-- `just release alpha|beta|stable [major|minor|patch|X.Y.Z]`: fast-forwards
-  `main` to `devel` and tags `vX.Y.Z[-alpha.N|-beta.N]`, only if the commit's
-  CI passed. `just promote stable` tags the current `main` as-is.
-- The `release` workflow builds the image and pushes it to this Forgejo's
-  registry as `:<version>`, `:<channel>` (alpha / beta / stable) and
-  `:latest`, then calls the Portainer webhook.
-
-Forgejo secrets: `REGISTRY_TOKEN` (a token with package write access),
-optional `REGISTRY_USER` (default: the repository owner), `PORTAINER_WEBHOOK`.
