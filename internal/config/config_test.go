@@ -18,7 +18,8 @@ sources:
 	}
 	s := c.Sources[0]
 	if c.Listen != ":8080" || s.Quirks.Ghosts.Hold.Duration != 20*time.Minute || s.Quirks.Ghosts.MaxStopsLeft != 2 ||
-		s.Quirks.Inference.MaxWait.Duration != 30*time.Minute || s.Realtime.FastPoll.Duration != 2*time.Second {
+		s.Quirks.Inference.MaxWait.Duration != 30*time.Minute || s.Realtime.FastPoll.Duration != 2*time.Second ||
+		s.Quirks.DayOff.Enabled || s.Quirks.DayOff.MaxDelay.Duration != 3*time.Hour {
 		t.Fatalf("defaults: %+v", c)
 	}
 	for _, bad := range []string{

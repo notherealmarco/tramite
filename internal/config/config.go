@@ -67,6 +67,18 @@ type RealtimeFeed struct {
 type Quirks struct {
 	Ghosts    GhostQuirk     `yaml:"ghost_memory"`
 	Inference InferenceQuirk `yaml:"inference"`
+	DayOff    DayOffQuirk    `yaml:"day_off_times"`
+}
+
+// DayOffQuirk: predicted times with the right time of day on the wrong day
+// (Rome, on trips running after midnight: a day late or a day early). A
+// prediction more than 12 hours from the timetable is moved by whole days
+// to the day nearest the timetable.
+type DayOffQuirk struct {
+	Enabled bool `yaml:"enabled"`
+	// A moved prediction still further than this from the timetable is not
+	// a day-off error: it is dropped (the stop then has no prediction).
+	MaxDelay Duration `yaml:"max_delay"`
 }
 
 // GhostQuirk: buses that vanish from the feeds near the end of their trip
@@ -156,6 +168,7 @@ func (c *Config) applyDefaults() {
 		if s.Quirks.Ghosts.MaxStopsLeft == 0 {
 			s.Quirks.Ghosts.MaxStopsLeft = 2
 		}
+		def(&s.Quirks.DayOff.MaxDelay, 3*time.Hour)
 		q := &s.Quirks.Inference
 		def(&q.Turnaround, 3*time.Minute)
 		def(&q.MaxDelay, time.Hour)

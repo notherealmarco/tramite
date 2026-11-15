@@ -62,6 +62,11 @@ var (
 		Help: "Departures with an inferred bus, by kind (on_time, delayed).",
 	}, []string{"source", "kind"})
 
+	DayOffTimes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "tramite_day_off_times_total",
+		Help: "Predicted times more than 12 h from the timetable, by outcome (moved to the right day, dropped).",
+	}, []string{"source", "outcome"})
+
 	StaticTrips = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "tramite_static_trips",
 		Help: "Trips in the loaded timetable.",
@@ -83,7 +88,7 @@ func init() {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		Fetches, FetchLag, FeedAge, FeedInterval, Stale, ProcessSeconds,
-		Vehicles, Ghosts, Inferred, StaticTrips, StreamClients, StreamEvents,
+		Vehicles, Ghosts, Inferred, DayOffTimes, StaticTrips, StreamClients, StreamEvents,
 	)
 }
 

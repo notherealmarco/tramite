@@ -21,6 +21,11 @@ whole city's feed.
   by run (line, direction, start time) when the ids come from another
   timetable version.
 - **Quirks**, switched on per source:
+  - `day_off_times`: a prediction more than 12 hours from the timetable has
+    the right time on the wrong day (Rome, on trips running after midnight):
+    it is moved by whole days to the day nearest the timetable, or dropped
+    if it is then still more than `max_delay` (default 3 h) away. Counted in
+    `tramite_day_off_times_total`.
   - `ghost_memory`: buses that vanish from the feeds near the end of their
     trip (Rome: about one stop before the end, until the driver sets the next
     trip) are remembered for a while.

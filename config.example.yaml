@@ -26,6 +26,14 @@ sources:
     # Keep every feed version under data/raw (about 1 GB/day for Rome).
     archive: false
     quirks:
+      # After midnight some of Rome's predictions have the right time on the
+      # wrong day (a day late or early), on trips still counted in the day
+      # before ("25:46"). A prediction more than 12 h from the timetable is
+      # moved to the day nearest it; if it is then still further than
+      # max_delay it is dropped (that stop has no prediction).
+      day_off_times:
+        enabled: true
+        max_delay: 3h
       # Buses vanish from Rome's feeds about a stop before the end of their
       # trip until the driver sets the next one (median 2.5 min, p95 13 min).
       ghost_memory:

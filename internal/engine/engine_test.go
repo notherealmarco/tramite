@@ -523,3 +523,49 @@ func TestInferredFromLastRealPrediction(t *testing.T) {
 		t.Fatalf("A: want inferred 14:58, got %s %s", a.DepartureTimestampReason, a.Departure.In(g.Rome))
 	}
 }
+
+// Rome, after midnight: some predictions have the right time on the wrong
+// day. With the quirk they go to the day nearest the timetable; one that
+// is still hours away is dropped; ordinary predictions are left alone.
+func TestDayOffTimes(t *testing.T) {
+	day := 24 * time.Hour
+	updates := g.TU{Trip: "out1", Updates: []g.STU{
+		{Seq: 1, Stop: "A", Time: g.At(14, 38, 0).Add(day)},               // a day late
+		{Seq: 2, Stop: "B", Time: g.At(14, 45, 0).Add(-day)},              // a day early
+		{Seq: 3, Stop: "C", Time: g.At(14, 50, 0).Add(day + 5*time.Hour)}, // not a day-off error
+	}}
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 34, 0)
+	fx.src.Cfg.Quirks.DayOff.Enabled = true
+	fx.tripUpdates(updates)
+	v, err := fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := v.StopTimes[0], v.StopTimes[1], v.StopTimes[2]
+	if a.DepartureTimestampReason != engine.ReasonPredicted || !a.Departure.Equal(g.At(14, 38, 0)) {
+		t.Fatalf("A: want 14:38 today, got %s %s", a.DepartureTimestampReason, a.Departure.In(g.Rome))
+	}
+	if b.DepartureTimestampReason != engine.ReasonPredicted || !b.Departure.Equal(g.At(14, 45, 0)) {
+		t.Fatalf("B: want 14:45 today, got %s %s", b.DepartureTimestampReason, b.Departure.In(g.Rome))
+	}
+	if c.DepartureTimestampReason != engine.ReasonPropagated || !c.Arrival.Equal(g.At(14, 55, 0)) {
+		t.Fatalf("C: dropped, so B's 5 min carry on: want 14:55 propagated, got %s %s", c.DepartureTimestampReason, c.Arrival.In(g.Rome))
+	}
+
+	// A bus really 2 hours late is not touched.
+	fx.tripUpdates(g.TU{Trip: "out1", Updates: []g.STU{{Seq: 1, Stop: "A", Time: g.At(16, 33, 0)}}})
+	v, _ = fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if a := v.StopTimes[0]; !a.Departure.Equal(g.At(16, 33, 0)) {
+		t.Fatalf("2 h late: got %s", a.Departure.In(g.Rome))
+	}
+
+	// Without the quirk the feed is served as it comes.
+	off := newFixture(t, false, false)
+	off.now = g.At(14, 34, 0)
+	off.tripUpdates(updates)
+	v, _ = off.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if a := v.StopTimes[0]; !a.Departure.Equal(g.At(14, 38, 0).Add(day)) {
+		t.Fatalf("quirk off: got %s", a.Departure.In(g.Rome))
+	}
+}

@@ -147,11 +147,93 @@ func (s *Source) applyTripUpdates(ts time.Time, tus []live.TripUpdate, raw []byt
 		return
 	}
 	now := s.Now()
+	moved, dropped := 0, 0
 	for i := range tus {
 		if td, ok := s.resolve(tus[i].Trip, now); ok {
+			if s.Cfg.Quirks.DayOff.Enabled {
+				m, d := s.fixDayOff(td, &tus[i])
+				moved, dropped = moved+m, dropped+d
+			}
 			s.st.tus[td] = &tus[i]
 		}
 	}
+	if s.Cfg.Quirks.DayOff.Enabled {
+		metrics.DayOffTimes.WithLabelValues(s.Cfg.ID, "moved").Add(float64(moved))
+		metrics.DayOffTimes.WithLabelValues(s.Cfg.ID, "dropped").Add(float64(dropped))
+	}
+}
+
+// A prediction this far from the timetable is on the wrong day, not late.
+const dayOffBeyond = 12 * time.Hour
+
+// fixDayOff (the day_off_times quirk) puts tu's predictions on the right
+// day: one more than 12 hours from the timetable at its stop is moved by
+// whole days to the day nearest the timetable; if it is then still more
+// than max_delay away it is dropped, and the stop has no prediction (the
+// delay of the stop before carries on to it). Predictions within 12 hours
+// are left alone. Returns how many were moved and dropped.
+func (s *Source) fixDayOff(td TripDay, tu *live.TripUpdate) (moved, dropped int) {
+	max := s.Cfg.Quirks.DayOff.MaxDelay.Duration
+	const day = 24 * time.Hour
+	// The delay a prediction should have had: its time of day, the day
+	// nearest the timetable. ok: no further than max_delay.
+	nearest := func(delay time.Duration) (time.Duration, bool) {
+		delay -= (delay + day/2).Truncate(day)
+		if delay < -day/2 {
+			delay += day
+		}
+		return delay, delay <= max && delay >= -max
+	}
+	fix := func(t *time.Time, sched time.Time) {
+		if t.IsZero() {
+			return
+		}
+		d := t.Sub(sched)
+		if d <= dayOffBeyond && d >= -dayOffBeyond {
+			return
+		}
+		if n, ok := nearest(d); ok {
+			*t = sched.Add(n)
+			moved++
+		} else {
+			*t = time.Time{}
+			dropped++
+		}
+	}
+	// A delay alone (a stop's without a time, or the whole trip's): the
+	// same, on the delay itself.
+	fixDelay := func(p **int32) {
+		if *p == nil {
+			return
+		}
+		d := time.Duration(**p) * time.Second
+		if d <= dayOffBeyond && d >= -dayOffBeyond {
+			return
+		}
+		if n, ok := nearest(d); ok {
+			secs := int32(n / time.Second)
+			*p = &secs
+			moved++
+		} else {
+			*p = nil
+			dropped++
+		}
+	}
+	f := s.st.feed
+	stops := f.TripStops(td.Trip)
+	for i := range tu.Updates {
+		u := &tu.Updates[i]
+		for _, st := range stops {
+			if (u.Seq != 0 && u.Seq == st.Seq) || (u.Seq == 0 && u.StopID == f.Stops[st.Stop].ID) {
+				fix(&u.Arr, s.sched(td.Date, st.Arr))
+				fix(&u.Dep, s.sched(td.Date, st.Dep))
+				break
+			}
+		}
+		fixDelay(&u.Delay)
+	}
+	fixDelay(&tu.Delay)
+	return moved, dropped
 }
 
 func (s *Source) applyVehicles(ts time.Time, vs []live.Vehicle, trackGhosts bool) {
