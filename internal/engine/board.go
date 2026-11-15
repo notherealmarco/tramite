@@ -344,7 +344,8 @@ func (s *Source) TripAt(stopID, tripID, line string) (*Board, error) {
 }
 
 // realtimeAt: the trip update's time at this stop. A prediction for the stop
-// itself, else the delay of the last prediction before it carried forward.
+// itself, else (also when the feed says "no data" for it) the delay of the
+// last prediction before it carried forward.
 // passed: the trip has predictions only for later stops (gone by).
 func (s *Source) realtimeAt(td TripDay, tu *live.TripUpdate, st gtfs.StopTime, sched time.Time) (t time.Time, reason string, passed, skipped bool) {
 	f := s.st.feed
@@ -356,8 +357,11 @@ func (s *Source) realtimeAt(td TripDay, tu *live.TripUpdate, st gtfs.StopTime, s
 			if u.Skipped {
 				return t, "", false, true
 			}
+			// No data for this stop (Rome: the last stop of nearly every
+			// trip, with the timetable time in it): the delay of the stop
+			// before carries on, as for a stop the feed leaves out.
 			if u.NoData {
-				return t, "", false, false
+				break
 			}
 			if x := u.Time(); !x.IsZero() {
 				return x, ReasonPredicted, false, false
@@ -365,7 +369,7 @@ func (s *Source) realtimeAt(td TripDay, tu *live.TripUpdate, st gtfs.StopTime, s
 			if u.Delay != nil {
 				return sched.Add(time.Duration(*u.Delay) * time.Second), ReasonPredicted, false, false
 			}
-			return t, "", false, false
+			break
 		}
 		if u.Seq != 0 && u.Seq < st.Seq && !u.NoData && !u.Skipped {
 			prev = u

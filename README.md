@@ -94,7 +94,9 @@ gzipped when the client accepts it.
 | true | `PREDICTED` / `PROPAGATED` | true | live, bus on its way |
 | false | `INFERRED` | | a known bus should run it; late when `departure` > `scheduledDeparture` |
 
-`PROPAGATED`: the delay of an earlier stop carried forward. For `INFERRED`,
+`PROPAGATED`: the delay of an earlier stop carried forward, to a stop the
+feed leaves out or marks as having no data (Rome: the last stop of nearly
+every trip). For `INFERRED`,
 `vehicle.id` is the bus expected to run the departure. Live buses also come
 with their position (`vehicle.lat`, `lon`, `bearing`, `timestamp`). Each row
 has `arrival`/`scheduledArrival` too (same delay as the departure).

@@ -481,3 +481,28 @@ func TestTripViewInferred(t *testing.T) {
 		}
 	}
 }
+
+// Rome marks the last stop of a trip "no data" (with the timetable time in
+// it): the delay of the stop before carries on to it.
+func TestNoDataStopTakesThePreviousDelay(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 34, 0)
+	fx.tripUpdates(g.TU{Trip: "out1", Updates: []g.STU{
+		{Seq: 2, Stop: "B", Time: g.At(14, 46, 0)},
+		{Seq: 3, Stop: "C", Time: g.At(14, 50, 0), NoData: true},
+	}})
+	v, err := fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := v.StopTimes[2]
+	if c.DepartureTimestampReason != engine.ReasonPropagated || !c.RealTime || !c.Arrival.Equal(g.At(14, 56, 0)) {
+		t.Fatalf("C: want 14:56 propagated, got %+v", c)
+	}
+	// Nothing before it to carry on: the timetable, as before.
+	fx.tripUpdates(g.TU{Trip: "out1", Updates: []g.STU{{Seq: 3, Stop: "C", Time: g.At(14, 50, 0), NoData: true}}})
+	v, _ = fx.src.Trip("20261113_14:33_it-Lazio-Rome_out1", "", "")
+	if c := v.StopTimes[2]; c.RealTime || c.DepartureTimestampReason != engine.ReasonNoRT {
+		t.Fatalf("C alone: %+v", c)
+	}
+}
