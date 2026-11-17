@@ -109,10 +109,15 @@ every trip). For `INFERRED`,
 with their position (`vehicle.lat`, `lon`, `bearing`, `timestamp`). Each row
 has `arrival`/`scheduledArrival` too (same delay as the departure).
 
+`tripShortName` (departures, trips, vehicles; absent when empty) is the
+feed's `trip_short_name`, as MOTIS names it: the train number on
+Trenitalia (`12694`), an internal run code on Rome's buses. Clients decide
+when to show it.
+
 ### Trip fields
 
 A trip answer has the trip once (`tripId`, `gtfsTripId`, `routeShortName`,
-`headsign`, `tripFrom`, `tripTo`, `vehicle`, `cancelled`, ...) and
+`tripShortName`, `headsign`, `tripFrom`, `tripTo`, `vehicle`, `cancelled`, ...) and
 `stopTimes`: one entry per stop in order, with `stopId`, `name`, `lat`,
 `lon`, `stopSequence`, the four times, `realTime`,
 `departureTimestampReason` and `cancelled` (that stop is skipped). Stops the

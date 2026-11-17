@@ -34,6 +34,7 @@ type TripView struct {
 	RouteType      int         `json:"routeType"`
 	DirectionID    *int8       `json:"directionId,omitempty"`
 	Headsign       string      `json:"headsign"`
+	TripShortName  string      `json:"tripShortName,omitempty"`
 	Cancelled      bool        `json:"cancelled,omitempty"`
 	TripFrom       Place       `json:"tripFrom"`
 	TripTo         Place       `json:"tripTo"`
@@ -75,7 +76,7 @@ func (s *Source) Trip(tripID, line, stopID string) (*TripView, error) {
 			out = &TripView{
 				Source: d.Source, TripID: d.TripID, GTFSTripID: d.GTFSTripID, ServiceDate: d.ServiceDate,
 				RouteID: d.RouteID, RouteShortName: d.RouteShortName, RouteColor: d.RouteColor, RouteTextColor: d.RouteTextColor,
-				RouteType: d.RouteType, DirectionID: d.DirectionID, Headsign: d.Headsign,
+				RouteType: d.RouteType, DirectionID: d.DirectionID, Headsign: d.Headsign, TripShortName: d.TripShortName,
 				TripFrom: d.TripFrom, TripTo: d.TripTo, Vehicle: d.Vehicle, StopTimes: []TripStop{},
 			}
 			if d.DepartureTimestampReason == ReasonInferred {

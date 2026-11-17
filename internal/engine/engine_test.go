@@ -77,6 +77,15 @@ func (fx *fixture) board(stop string) map[string]engine.StopTime {
 	return out
 }
 
+func TestBoardTripShortName(t *testing.T) {
+	fx := newFixture(t, false, false)
+	fx.now = g.At(14, 30, 0)
+	b := fx.board("it-Lazio-Rome_A")
+	if b["out1"].TripShortName != "12694" || b["out2"].TripShortName != "" {
+		t.Fatalf("tripShortName: out1 %q out2 %q", b["out1"].TripShortName, b["out2"].TripShortName)
+	}
+}
+
 func TestBoardTimetableOnly(t *testing.T) {
 	fx := newFixture(t, false, false)
 	b := fx.board("A")
@@ -263,7 +272,7 @@ func TestVehiclesByLineAndArea(t *testing.T) {
 		g.VP{Label: "1", Trip: "out1", Route: "60", Seq: 2, Lat: 41.905, Lon: 12.505},
 		g.VP{Label: "2", Trip: "zzz", Route: "999", Seq: 2, Lat: 45, Lon: 9},
 	)
-	if vs := fx.src.Vehicles(engine.VehicleFilter{Line: "it-Lazio-Rome_60"}); len(vs) != 1 || vs[0].ID != "1" || vs[0].Headsign != "P.ZA VENEZIA" || !*vs[0].Started {
+	if vs := fx.src.Vehicles(engine.VehicleFilter{Line: "it-Lazio-Rome_60"}); len(vs) != 1 || vs[0].ID != "1" || vs[0].Headsign != "P.ZA VENEZIA" || vs[0].TripShortName != "12694" || !*vs[0].Started {
 		t.Fatalf("line 60: %+v", vs)
 	}
 	box := engine.BBox{MinLat: 44, MinLon: 8, MaxLat: 46, MaxLon: 10}
@@ -434,7 +443,7 @@ func TestTripView(t *testing.T) {
 	if err != nil || len(v.StopTimes) != 3 {
 		t.Fatalf("Trip: %+v %v", v, err)
 	}
-	if v.GTFSTripID != "out1" || v.RouteShortName != "60" || v.Vehicle == nil || v.Vehicle.ID != "5039" || v.Vehicle.Lat == 0 ||
+	if v.GTFSTripID != "out1" || v.RouteShortName != "60" || v.TripShortName != "12694" || v.Vehicle == nil || v.Vehicle.ID != "5039" || v.Vehicle.Lat == 0 ||
 		v.TripTo.StopID != "it-Lazio-Rome_C" {
 		t.Fatalf("trip: %+v %+v", v, v.Vehicle)
 	}

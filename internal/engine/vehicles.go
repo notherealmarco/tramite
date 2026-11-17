@@ -17,6 +17,7 @@ type VehicleInfo struct {
 	RouteColor          string  `json:"routeColor,omitempty"`
 	RouteTextColor      string  `json:"routeTextColor,omitempty"`
 	Headsign            string  `json:"headsign,omitempty"`
+	TripShortName       string  `json:"tripShortName,omitempty"`
 	TripID              string  `json:"tripId,omitempty"`
 	GTFSTripID          string  `json:"gtfsTripId,omitempty"`
 	DirectionID         *int8   `json:"directionId,omitempty"`
@@ -87,7 +88,7 @@ func (s *Source) vehicleInfo(key string, v *live.Vehicle, now time.Time) Vehicle
 		tr := &f.Trips[td.Trip]
 		r := &f.Routes[tr.Route]
 		vi.RouteID, vi.RouteShortName, vi.RouteColor, vi.RouteTextColor = r.ID, r.Line(), r.Color, r.TextColor
-		vi.Headsign, vi.TripID, vi.GTFSTripID = tr.Headsign, s.tripID(td), tr.ID
+		vi.Headsign, vi.TripShortName, vi.TripID, vi.GTFSTripID = tr.Headsign, tr.ShortName, s.tripID(td), tr.ID
 		if tr.Direction >= 0 {
 			d := tr.Direction
 			vi.DirectionID = &d

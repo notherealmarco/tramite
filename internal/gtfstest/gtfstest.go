@@ -33,12 +33,12 @@ var Line60 = map[string]string{
 	"routes.txt": "route_id,agency_id,route_short_name,route_type,route_color\n60,ATAC,60,3,D02F2F\n",
 	"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
 		"ALL,1,1,1,1,1,1,1,20260101,20271231\n",
-	"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id\n" +
-		"60,ALL,out1,P.ZA VENEZIA,0\n" +
-		"60,ALL,out2,P.ZA VENEZIA,0\n" +
-		"60,ALL,out3,P.ZA VENEZIA,0\n" +
-		"60,ALL,in1,LGO PUGLIESE,1\n" +
-		"60,ALL,in2,LGO PUGLIESE,1\n",
+	"trips.txt": "route_id,service_id,trip_id,trip_headsign,trip_short_name,direction_id\n" +
+		"60,ALL,out1,P.ZA VENEZIA,12694,0\n" +
+		"60,ALL,out2,P.ZA VENEZIA,,0\n" +
+		"60,ALL,out3,P.ZA VENEZIA,,0\n" +
+		"60,ALL,in1,LGO PUGLIESE,,1\n" +
+		"60,ALL,in2,LGO PUGLIESE,,1\n",
 	"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
 		"out1,14:33:00,14:33:00,A,1\nout1,14:40:00,14:40:00,B,2\nout1,14:50:00,14:50:00,C,3\n" +
 		"out2,14:49:00,14:49:00,A,1\nout2,14:56:00,14:56:00,B,2\nout2,15:06:00,15:06:00,C,3\n" +

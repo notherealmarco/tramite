@@ -55,17 +55,20 @@ type VehicleRef struct {
 
 // StopTime is one departure from a stop, named after MOTIS's StopTime.
 type StopTime struct {
-	Source                   string      `json:"source"`
-	TripID                   string      `json:"tripId"`
-	GTFSTripID               string      `json:"gtfsTripId"`
-	ServiceDate              string      `json:"serviceDate"`
-	RouteID                  string      `json:"routeId"`
-	RouteShortName           string      `json:"routeShortName"`
-	RouteColor               string      `json:"routeColor,omitempty"`
-	RouteTextColor           string      `json:"routeTextColor,omitempty"`
-	RouteType                int         `json:"routeType"`
-	DirectionID              *int8       `json:"directionId,omitempty"`
-	Headsign                 string      `json:"headsign"`
+	Source         string `json:"source"`
+	TripID         string `json:"tripId"`
+	GTFSTripID     string `json:"gtfsTripId"`
+	ServiceDate    string `json:"serviceDate"`
+	RouteID        string `json:"routeId"`
+	RouteShortName string `json:"routeShortName"`
+	RouteColor     string `json:"routeColor,omitempty"`
+	RouteTextColor string `json:"routeTextColor,omitempty"`
+	RouteType      int    `json:"routeType"`
+	DirectionID    *int8  `json:"directionId,omitempty"`
+	Headsign       string `json:"headsign"`
+	// TripShortName is the feed's trip_short_name, as MOTIS names it: the
+	// train number for trains, often an internal code for buses.
+	TripShortName            string      `json:"tripShortName,omitempty"`
 	StopID                   string      `json:"stopId"`
 	StopSequence             int32       `json:"stopSequence"`
 	ScheduledArrival         time.Time   `json:"scheduledArrival"`
@@ -243,7 +246,7 @@ func (s *Source) row(td TripDay, st gtfs.StopTime, now time.Time) (StopTime, boo
 	d := StopTime{
 		Source: s.Cfg.ID, TripID: s.tripID(td), GTFSTripID: tr.ID, ServiceDate: fmt.Sprintf("%08d", td.Date),
 		RouteID: s.Prefix() + "_" + route.ID, RouteShortName: route.Line(), RouteColor: route.Color, RouteTextColor: route.TextColor,
-		RouteType: route.Type, Headsign: tr.Headsign, StopSequence: st.Seq, StopID: s.place(st.Stop).StopID,
+		RouteType: route.Type, Headsign: tr.Headsign, TripShortName: tr.ShortName, StopSequence: st.Seq, StopID: s.place(st.Stop).StopID,
 		ScheduledDeparture: sched.UTC(), Departure: sched.UTC(), DepartureTimestampReason: ReasonNoRT,
 		ScheduledArrival: schedArr.UTC(), Arrival: schedArr.UTC(),
 		TripFrom: s.place(f.StopTimes[tr.First].Stop), TripTo: s.place(f.LastStop(td.Trip).Stop),

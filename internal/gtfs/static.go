@@ -43,6 +43,9 @@ type Trip struct {
 	Service   int32
 	Direction int8 // -1 when unknown
 	Headsign  string
+	// ShortName is trip_short_name: the train number on Trenitalia's boards
+	// ("12694"), an internal run code on Rome's buses.
+	ShortName string
 	Shape     string
 	// StopTimes[First : First+Count] are this trip's stops in order.
 	First, Count int32
@@ -164,7 +167,8 @@ func Load(data []byte, loc *time.Location, version string) (*Feed, error) {
 		}
 		f.TripIdx[r.get("trip_id")] = int32(len(f.Trips))
 		f.Trips = append(f.Trips, Trip{ID: r.get("trip_id"), Route: route, Service: f.service(r.get("service_id")),
-			Direction: dir, Headsign: r.get("trip_headsign"), Shape: r.get("shape_id"), First: -1})
+			Direction: dir, Headsign: r.get("trip_headsign"),
+			ShortName: r.get("trip_short_name"), Shape: r.get("shape_id"), First: -1})
 		return nil
 	}); err != nil {
 		return nil, err
