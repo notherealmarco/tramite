@@ -33,3 +33,29 @@ sources:
 		}
 	}
 }
+
+func TestPlacesConfig(t *testing.T) {
+	c, err := Parse([]byte(`
+places:
+  provider: google
+  bias: {lat: 41.9, lon: 12.5}
+  per_ip: {per_minute: 30, per_day: 500}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Places
+	if p.APIKeyEnv != "TRAMITE_PLACES_API_KEY" || p.RadiusMeters != 30000 || p.Bias.RadiusMeters != 30000 ||
+		p.MonthlyLimit.Autocomplete != 9500 || p.MonthlyLimit.Details != 9500 || p.PerIP.PerDay != 500 {
+		t.Fatalf("defaults: %+v", p)
+	}
+	for _, bad := range []string{
+		`places: {provider: mapbox}`,
+		`places: {provider: google, radius_m: 60000}`,
+		`places: {provider: google, per_ip: {per_day: -1}}`,
+	} {
+		if _, err := Parse([]byte(bad)); err == nil {
+			t.Errorf("accepted: %s", bad)
+		}
+	}
+}

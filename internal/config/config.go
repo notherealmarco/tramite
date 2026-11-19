@@ -18,6 +18,53 @@ type Config struct {
 	// must survive a restart.
 	DataDir string   `yaml:"data_dir"`
 	Sources []Source `yaml:"sources"`
+	// Places: place search (autocomplete) through a provider. Off unless a
+	// provider and its key are set.
+	Places Places `yaml:"places"`
+}
+
+// Places configures /v1/places: suggestions while typing and the position of
+// the one picked, from a provider (only "google" for now), within its free
+// monthly allowance and per-client limits.
+type Places struct {
+	// Provider: "google" (Places API New), or empty for no place search.
+	Provider string `yaml:"provider"`
+	// APIKeyEnv names the environment variable holding the provider's key
+	// (kept out of the file). Without a key place search is off.
+	APIKeyEnv string `yaml:"api_key_env"`
+	// Region: country code results are formatted and biased for, e.g. "it".
+	Region string `yaml:"region"`
+	// Bias: where results are favoured when the client sends no position.
+	Bias *Circle `yaml:"bias"`
+	// RadiusMeters around the client's position that results are favoured in.
+	RadiusMeters float64 `yaml:"radius_m"`
+	// MonthlyLimit: billable requests per calendar month (Pacific time, as
+	// Google bills) after which place search answers "quota" until next month.
+	MonthlyLimit MonthlyLimit `yaml:"monthly_limit"`
+	// PerIP limits each client; 0 means no limit.
+	PerIP PerIP `yaml:"per_ip"`
+	// ClientIPHeader: header carrying the client address when Tramite runs
+	// behind a reverse proxy (e.g. X-Forwarded-For, X-Real-IP). Empty: the
+	// connection's address.
+	ClientIPHeader string `yaml:"client_ip_header"`
+}
+
+type Circle struct {
+	Lat          float64 `yaml:"lat"`
+	Lon          float64 `yaml:"lon"`
+	RadiusMeters float64 `yaml:"radius_m"`
+}
+
+// MonthlyLimit counts what the provider bills: suggestions typed in a search
+// that never picked a result, and positions looked up.
+type MonthlyLimit struct {
+	Autocomplete int `yaml:"autocomplete"`
+	Details      int `yaml:"details"`
+}
+
+type PerIP struct {
+	PerMinute int `yaml:"per_minute"`
+	PerDay    int `yaml:"per_day"`
 }
 
 // Source is one GTFS dataset (an operator or a region) with its realtime feeds.
@@ -153,6 +200,23 @@ func (c *Config) applyDefaults() {
 	if c.DataDir == "" {
 		c.DataDir = "data"
 	}
+	p := &c.Places
+	if p.APIKeyEnv == "" {
+		p.APIKeyEnv = "TRAMITE_PLACES_API_KEY"
+	}
+	if p.RadiusMeters == 0 {
+		p.RadiusMeters = 30000
+	}
+	if p.Bias != nil && p.Bias.RadiusMeters == 0 {
+		p.Bias.RadiusMeters = p.RadiusMeters
+	}
+	// Google's free allowance is 10,000 of each a month: stop a bit before.
+	if p.MonthlyLimit.Autocomplete == 0 {
+		p.MonthlyLimit.Autocomplete = 9500
+	}
+	if p.MonthlyLimit.Details == 0 {
+		p.MonthlyLimit.Details = 9500
+	}
 	for i := range c.Sources {
 		s := &c.Sources[i]
 		def := func(d *Duration, v time.Duration) {
@@ -181,6 +245,14 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	switch p := c.Places; {
+	case p.Provider != "" && p.Provider != "google":
+		return fmt.Errorf("places.provider %q: only \"google\" is supported", p.Provider)
+	case p.RadiusMeters < 0 || p.RadiusMeters > 50000 || (p.Bias != nil && (p.Bias.RadiusMeters < 0 || p.Bias.RadiusMeters > 50000)):
+		return fmt.Errorf("places: radius_m must be at most 50000")
+	case p.MonthlyLimit.Autocomplete < 0 || p.MonthlyLimit.Details < 0 || p.PerIP.PerMinute < 0 || p.PerIP.PerDay < 0:
+		return fmt.Errorf("places: limits must not be negative")
+	}
 	seen := map[string]bool{}
 	for _, s := range c.Sources {
 		if !idRe.MatchString(s.ID) {

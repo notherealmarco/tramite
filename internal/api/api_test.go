@@ -269,3 +269,19 @@ func TestAreaVehiclesTripRowAndGzip(t *testing.T) {
 		t.Fatalf("unknown trip: %d", r4.StatusCode)
 	}
 }
+
+func TestPlacesOff(t *testing.T) {
+	srv, _, _ := setup(t)
+	for _, path := range []string{"/v1/places/autocomplete?q=colosseo", "/v1/places/google:P1"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]string
+		json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotImplemented || body["error"] != "unavailable" {
+			t.Fatalf("%s: %d %v", path, resp.StatusCode, body)
+		}
+	}
+}

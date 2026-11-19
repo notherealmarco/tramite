@@ -64,6 +64,8 @@ Tramite finds the source from the prefix; an id no source covers is a 404.
 | `GET /v1/stream` | SSE stream (publish/subscribe, below) |
 | `POST /v1/stream/{id}/topics` | add/remove topics of an open stream |
 | `GET /v1/sources/{source}/gtfs-rt/trip-updates.pb` | upstream TripUpdates plus inferred departures (`inferred:<trip>` entities), e.g. for MOTIS |
+| `GET /v1/places/autocomplete?q=…&near=lat,lon&lang=it&session=<id>` | place suggestions while typing (place search, below) |
+| `GET /v1/places/{id}?session=<id>&lang=it` | the position of a suggestion picked |
 | `GET /healthz`, `GET /readyz` | liveness; ready once every timetable is loaded |
 | `GET /metrics` | OpenMetrics (feed age, fetch lag, stale feeds, SSE clients, ...) |
 
@@ -131,6 +133,38 @@ bus is now, GTFS-RT `OccupancyStatus` names (`EMPTY`,
 `CRUSHED_STANDING_ROOM_ONLY`, `FULL`, `NOT_ACCEPTING_PASSENGERS`). Only when
 the feed reports it (in Rome about half the buses), never for an inferred
 bus. `occupancyPercentage` when the feed gives one.
+
+### Place search
+
+Optional (`places:` in the config): suggestions while typing, from a
+provider (Google Places API New for now), within its free monthly
+allowance. Off without a provider or without its key (in the environment
+variable `api_key_env` names, `TRAMITE_PLACES_API_KEY` by default).
+
+- `autocomplete`: `{"attribution": "Google Maps", "results": [{"id":
+  "google:ChIJ…", "name": "Colosseo", "subtitle": "Piazza del Colosseo,
+  Roma", "kind": "place|address", "distanceMeters": 850}]}`. No positions:
+  show `attribution` with the results.
+- `places/{id}`: `{"id": …, "lat": …, "lon": …}`. Send the same `session`
+  as the search: it ends the session, and Google then bills only this
+  lookup (the search's suggestions are free).
+
+Errors are `{"error": "<reason>"}`:
+
+| Status | `error` | |
+|---|---|---|
+| 501 | `unavailable` | no place search on this server |
+| 503 | `quota` | monthly allowance used up (`Retry-After`: until the next billing month, Pacific time) or the provider refused (`Retry-After: 60`) |
+| 429 | `rate_limit` | this client asked too often (`per_ip`; `Retry-After`: end of the minute or UTC day) |
+| 502 | `upstream` | the provider failed |
+| 404 | `not_found` | no such place |
+
+Tramite counts what Google bills, persisted in `data_dir/places/usage.json`:
+every suggestion request until its session ends with a lookup (abandoned
+searches stay counted), and every lookup. It stops at `monthly_limit`
+(9,500 of each by default, Google gives 10,000 free). Set daily caps on
+the key in the Google Cloud console as well, as a second fence. Metrics:
+`tramite_places_requests_total`, `tramite_places_billable`.
 
 ## Running
 

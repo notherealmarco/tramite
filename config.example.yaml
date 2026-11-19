@@ -2,6 +2,24 @@
 listen: ":8080"
 data_dir: data
 
+# Place search for the app (optional). Off without a provider or its key.
+places:
+  provider: google
+  # The key is read from this environment variable, never from the file.
+  api_key_env: TRAMITE_PLACES_API_KEY
+  region: it
+  # Results are favoured around the client (radius_m), or here when it
+  # sends no position.
+  radius_m: 30000
+  bias: {lat: 41.8933, lon: 12.4829, radius_m: 30000}
+  # Billable requests a month (Google: 10,000 of each free); then "quota"
+  # until the next billing month.
+  monthly_limit: {autocomplete: 9500, details: 9500}
+  # Per client (0 = no limit). A search is ~5 requests.
+  per_ip: {per_minute: 60, per_day: 600}
+  # Behind a reverse proxy: where the client address is.
+  # client_ip_header: X-Forwarded-For
+
 sources:
   - id: rome
     name: Roma

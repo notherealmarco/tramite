@@ -16,6 +16,7 @@ import (
 
 	"git.marcorealacci.me/marcorealacci/tramite/internal/engine"
 	"git.marcorealacci.me/marcorealacci/tramite/internal/metrics"
+	"git.marcorealacci.me/marcorealacci/tramite/internal/places"
 	"git.marcorealacci.me/marcorealacci/tramite/internal/service"
 )
 
@@ -24,6 +25,11 @@ type API struct {
 	Log *slog.Logger
 	// Heartbeat keeps SSE connections open through proxies.
 	Heartbeat time.Duration
+	// Places: place search, nil when off (its endpoints answer 501).
+	Places *places.Service
+	// ClientIPHeader: where the client address is behind a reverse proxy
+	// (per-client limits); empty for the connection's address.
+	ClientIPHeader string
 
 	streams registry // open SSE streams by id
 }
@@ -49,13 +55,15 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/vehicles", a.areaVehicles)
 	mux.HandleFunc("GET /v1/stream", a.stream)
 	mux.HandleFunc("POST /v1/stream/{id}/topics", a.updateTopics)
+	mux.HandleFunc("GET /v1/places/autocomplete", a.placeSuggestions)
+	mux.HandleFunc("GET /v1/places/{id}", a.placeLocation)
 	return cors(gzipped(mux))
 }
 
 func cors(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "ETag")
+		w.Header().Set("Access-Control-Expose-Headers", "ETag, Retry-After")
 		if r.Method == http.MethodOptions {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, If-None-Match, Last-Event-ID")

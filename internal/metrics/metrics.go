@@ -81,6 +81,18 @@ var (
 		Name: "tramite_stream_events_total",
 		Help: "SSE events sent, by kind.",
 	}, []string{"kind"})
+
+	// Place search requests by endpoint (autocomplete, details) and result
+	// (ok, quota, rate_limit, upstream_limit, not_found, error).
+	PlacesRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "tramite_places_requests_total",
+		Help: "Place search requests by endpoint and result.",
+	}, []string{"endpoint", "result"})
+
+	PlacesBillable = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "tramite_places_billable",
+		Help: "Place search requests the provider bills this month (autocomplete, details).",
+	}, []string{"kind"})
 )
 
 func init() {
@@ -89,6 +101,7 @@ func init() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		Fetches, FetchLag, FeedAge, FeedInterval, Stale, ProcessSeconds,
 		Vehicles, Ghosts, Inferred, DayOffTimes, StaticTrips, StreamClients, StreamEvents,
+		PlacesRequests, PlacesBillable,
 	)
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"git.marcorealacci.me/marcorealacci/tramite/internal/api"
 	"git.marcorealacci.me/marcorealacci/tramite/internal/config"
+	"git.marcorealacci.me/marcorealacci/tramite/internal/places"
 	"git.marcorealacci.me/marcorealacci/tramite/internal/service"
 )
 
@@ -50,8 +51,11 @@ func main() {
 	go svc.Run(ctx)
 
 	srv := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           (&api.API{Svc: svc, Log: log}).Handler(),
+		Addr: cfg.Listen,
+		Handler: (&api.API{Svc: svc, Log: log,
+			Places:         places.New(cfg.Places, cfg.DataDir, os.Getenv, log),
+			ClientIPHeader: cfg.Places.ClientIPHeader,
+		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: SSE streams stay open (each write has its own deadline).
 	}
